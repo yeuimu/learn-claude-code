@@ -283,6 +283,14 @@ def test_v9_system_prompt_mentions_autonomous():
     return True
 
 
+def test_idle_poll_interval_default():
+    """Verify IDLE_POLL_INTERVAL matches cli.js cZz=1000ms (1 second)."""
+    from v9_autonomous_agent import IDLE_POLL_INTERVAL
+    assert IDLE_POLL_INTERVAL == 1, f"Expected 1s, got {IDLE_POLL_INTERVAL}s"
+    print("PASS: test_idle_poll_interval_default")
+    return True
+
+
 # =============================================================================
 # v9 New Mechanism Tests (from final_design.md)
 # =============================================================================
@@ -717,6 +725,8 @@ if __name__ == "__main__":
         test_v9_dependency_chain,
         test_v9_vs_v8_loop_difference,
         test_v9_system_prompt_mentions_autonomous,
+        # v9 constant tests
+        test_idle_poll_interval_default,
         # v9 new mechanism tests
         test_idle_cycle_message_wake,
         test_idle_cycle_task_wake,

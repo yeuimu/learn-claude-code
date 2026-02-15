@@ -314,7 +314,7 @@ class TeammateManager:
         return f"Message sent to {recipient}"
 
     def check_inbox(self, name: str, team_name: str = None) -> list:
-        """Read and clear a teammate's inbox."""
+        """Read and clear a teammate's inbox atomically using lock file."""
         teammate = self._find_teammate(name, team_name)
         if not teammate or not teammate.inbox_path:
             return []
@@ -322,17 +322,25 @@ class TeammateManager:
         if not teammate.inbox_path.exists():
             return []
 
+        lock_path = teammate.inbox_path.with_suffix(".lock")
         messages = []
-        with open(teammate.inbox_path, "r") as f:
-            for line in f:
-                line = line.strip()
-                if line:
-                    try:
-                        messages.append(json.loads(line))
-                    except json.JSONDecodeError:
-                        pass
-
-        teammate.inbox_path.write_text("")
+        try:
+            fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.close(fd)
+            try:
+                with open(teammate.inbox_path, "r") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line:
+                            try:
+                                messages.append(json.loads(line))
+                            except json.JSONDecodeError:
+                                pass
+                teammate.inbox_path.write_text("")
+            finally:
+                lock_path.unlink(missing_ok=True)
+        except FileExistsError:
+            pass  # Another thread holds the lock; return empty, retry next poll
         return messages
 
     def delete_team(self, name: str) -> str:
@@ -738,7 +746,7 @@ def auto_compact_threshold(context_window: int = 200000, max_output: int = 16384
     return context_window - output_reserve - 13000
 
 
-MIN_SAVINGS = 2000
+MIN_SAVINGS = 20000
 MAX_RESTORE_FILES = 5
 MAX_RESTORE_TOKENS_PER_FILE = 5000
 MAX_RESTORE_TOKENS_TOTAL = 50000
@@ -768,8 +776,8 @@ class ContextManager:
 
     @staticmethod
     def estimate_tokens(text: str) -> int:
-        # cli.js PU1: Math.ceil(chars * 1.333) on serialized content
-        return len(text) * 4 // 3
+        # cli.js H2: Math.round(A.length / q) with default divisor q=4
+        return len(text) // 4
 
     def microcompact(self, messages: list) -> list:
         """

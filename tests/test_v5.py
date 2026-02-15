@@ -28,11 +28,11 @@ from v5_compression_agent import ContextManager
 
 def test_estimate_tokens():
     cm = ContextManager()
-    # estimate_tokens uses len(text) * 4 // 3
+    # estimate_tokens uses len(text) // 4
     result = cm.estimate_tokens("hello world")
-    expected = len("hello world") * 4 // 3  # 11 * 4 // 3 = 14
+    expected = len("hello world") // 4  # 11 // 4 = 2
     assert result == expected, f"Expected {expected}, got {result}"
-    assert result == 14, f"'hello world' (11 chars) * 4 // 3 should be 14, got {result}"
+    assert result == 2, f"'hello world' (11 chars) // 4 should be 2, got {result}"
     print("PASS: test_estimate_tokens")
     return True
 
@@ -121,7 +121,8 @@ def test_should_compact_threshold():
     # should_compact has MIN_SAVINGS guard: if <=5 messages, savings=0 -> always False.
     # Need >5 messages to properly trigger. Build 8 messages, each large enough
     # that total tokens exceed TOKEN_THRESHOLD (170616).
-    chunk_size = cm.TOKEN_THRESHOLD * 3 // (4 * 8) + 100
+    # With len//4 formula: need chunk_size such that 8 * (chunk_size+~30) // 4 > threshold
+    chunk_size = (cm.TOKEN_THRESHOLD * 4) // 8 + 100
     messages = [{"role": "user", "content": "x" * chunk_size} for _ in range(8)]
     result = cm.should_compact(messages)
     assert result is True, "should_compact should return True when tokens exceed TOKEN_THRESHOLD"
@@ -613,7 +614,8 @@ def test_min_savings_guard_proceeds():
     cm = ContextManager()
     # Build 8 messages, each with enough content to exceed threshold
     # First 3 messages will have enough tokens to produce savings >= MIN_SAVINGS
-    chunk_size = cm.TOKEN_THRESHOLD * 3 // (4 * 8) + 100
+    # With len//4: need chunk_size such that 8 * (chunk_size+~30) // 4 > threshold
+    chunk_size = (cm.TOKEN_THRESHOLD * 4) // 8 + 100
     messages = [{"role": "user", "content": "x" * chunk_size} for _ in range(8)]
     assert cm.should_compact(messages), \
         "With 8 large messages, savings should exceed MIN_SAVINGS"
@@ -622,10 +624,10 @@ def test_min_savings_guard_proceeds():
 
 
 def test_estimate_tokens_formula():
-    """Verify estimate_tokens("a" * 300) == 400 (300 * 4 // 3)."""
+    """Verify estimate_tokens("a" * 300) == 75 (300 // 4)."""
     cm = ContextManager()
     result = cm.estimate_tokens("a" * 300)
-    assert result == 400, f"Expected 400, got {result}"
+    assert result == 75, f"Expected 75, got {result}"
     print("PASS: test_estimate_tokens_formula")
     return True
 
@@ -744,7 +746,8 @@ def test_should_compact_exactly_at_threshold():
     # We need total > threshold AND savings >= MIN_SAVINGS.
     # At exactly threshold, total <= threshold => False
     # So build exactly threshold+1 to trigger. Verify boundary.
-    target_chars_per_msg = (cm.TOKEN_THRESHOLD * 3 // 4) // 8
+    # With len//4: chars_per_msg = threshold * 4 / 8 = threshold / 2
+    target_chars_per_msg = (cm.TOKEN_THRESHOLD * 4) // 8
     messages = [{"role": "user", "content": "x" * target_chars_per_msg} for _ in range(8)]
 
     total = sum(cm.estimate_tokens(json.dumps(m, default=str)) for m in messages)
@@ -789,13 +792,39 @@ def test_image_token_estimation_constant():
     # IMAGE_TOKEN_ESTIMATE is a constant (2000) used for image blocks
     assert IMAGE_TOKEN_ESTIMATE == 2000, \
         f"IMAGE_TOKEN_ESTIMATE should be 2000, got {IMAGE_TOKEN_ESTIMATE}"
-    # The estimate_tokens function uses len(text) * 4 // 3
-    # For a string of 1500 chars (= 2000 tokens), verify the formula
-    text_equivalent = "a" * 1500
+    # The estimate_tokens function uses len(text) // 4
+    # For a string of 8000 chars (= 2000 tokens), verify the formula
+    text_equivalent = "a" * 8000
     tokens = cm.estimate_tokens(text_equivalent)
     assert tokens == IMAGE_TOKEN_ESTIMATE, \
-        f"1500 chars should estimate to {IMAGE_TOKEN_ESTIMATE} tokens, got {tokens}"
+        f"8000 chars should estimate to {IMAGE_TOKEN_ESTIMATE} tokens, got {tokens}"
     print("PASS: test_image_token_estimation_constant")
+    return True
+
+
+def test_token_formula_min_savings_interaction():
+    """Verify that with len//4 formula and MIN_SAVINGS=20000,
+    compaction requires substantial real token savings."""
+    from v5_compression_agent import ContextManager, MIN_SAVINGS
+    import json
+
+    cm = ContextManager()
+    assert MIN_SAVINGS == 20000
+
+    # Create messages where non-recent portion has < 80000 chars
+    # (80000 chars // 4 = 20000 tokens = MIN_SAVINGS boundary)
+    small_messages = [
+        {"role": "user", "content": "x" * 10000}  # ~2500 tokens each
+        for _ in range(8)
+    ]
+    total = sum(cm.estimate_tokens(json.dumps(m, default=str)) for m in small_messages)
+    recent_size = sum(cm.estimate_tokens(json.dumps(m, default=str)) for m in small_messages[-5:])
+    savings = total - recent_size
+
+    # 3 non-recent messages * ~10000 chars each = ~30000 chars // 4 = ~7500 tokens
+    # 7500 < 20000 = MIN_SAVINGS, so should NOT compact
+    assert savings < MIN_SAVINGS, "Small messages should not trigger compaction"
+    print("PASS: test_token_formula_min_savings_interaction")
     return True
 
 
@@ -838,6 +867,7 @@ if __name__ == "__main__":
         test_should_compact_exactly_at_threshold,
         test_should_compact_just_below_threshold,
         test_image_token_estimation_constant,
+        test_token_formula_min_savings_interaction,
         # LLM integration
         test_llm_reads_multiple_files,
         test_llm_read_edit_workflow,

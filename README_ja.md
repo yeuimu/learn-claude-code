@@ -193,7 +193,7 @@ while True:
 | **ツールフィルタリング** | v3 | `AGENT_TYPES` | Exploreエージェントは読み取り専用ツールのみ |
 | **スキル注入** | v4 | `SkillLoader` | コンテンツをsystem promptに前置 |
 | **マイクロコンパクト** | v5 | `ContextManager.microcompact()` | 古いツール出力をプレースホルダーに置換 |
-| **自動コンパクト** | v5 | `ContextManager.auto_compact()` | 93%閾値でAPI要約を実行 |
+| **自動コンパクト** | v5 | `ContextManager.auto_compact()` | 85.3%閾値（数式ベース）でAPI要約を実行 |
 | **大出力処理** | v5 | `ContextManager.handle_large_output()` | 40Kトークン超はディスク保存、プレビュー返却 |
 | **トランスクリプト永続化** | v5 | `ContextManager.save_transcript()` | 完全な履歴を`.jsonl`に追記 |
 | **タスクCRUD** | v6 | `TaskManager` | create/get/update/list + JSON永続化 |
@@ -205,7 +205,7 @@ while True:
 | **チームメイトライフサイクル** | v8 | `_teammate_loop()` | active -> 作業 -> 受信箱確認 -> 終了 |
 | **ファイルベース受信箱** | v8 | `send_message()/check_inbox()` | JSONL形式、チームメイトごとのファイル |
 | **メッセージプロトコル** | v8 | `MESSAGE_TYPES` | 5種: message, broadcast, shutdown_req/resp, plan_approval |
-| **ツールスコーピング** | v8 | `TEAMMATE_TOOLS` | チームメイトは8ツール（TeamCreate/Delete なし） |
+| **ツールスコーピング** | v8 | `TEAMMATE_TOOLS` | チームメイトは9ツール（TeamCreate/Delete なし） |
 | **アイドルサイクル** | v9 | `_teammate_loop()` | active -> idle -> 受信箱ポーリング -> 起動 -> active |
 | **タスククレーミング** | v9 | `_teammate_loop()` | アイドルのチームメイトが未割当タスクを自動取得 |
 | **アイデンティティ保持** | v9 | `auto_compact` + identity | 圧縮後にチームメイト名/役割を再注入 |

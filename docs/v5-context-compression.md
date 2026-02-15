@@ -36,7 +36,7 @@ Context Window: 200,000 tokens
 +------------------------------------------------------------------+
          |
          v
-  When conversation tokens > 170,616 AND savings >= 2000:
+  When conversation tokens > 170,616 AND savings >= 20000:
          |
          v
   Trigger auto_compact()
@@ -62,7 +62,7 @@ Every agent turn:
    no --+-- yes
    |         |
    v         v
-continue  [Check: savings >= 2000?]
+continue  [Check: savings >= 20000?]
                |
           no --+-- yes
           |         |
@@ -105,7 +105,7 @@ The 13000 buffer accounts for system prompt, tool definitions, and overhead. The
 Compaction is skipped if the estimated savings are too small:
 
 ```python
-MIN_SAVINGS = 2000
+MIN_SAVINGS = 20000
 
 def should_compact(messages):
     total = sum(estimate_tokens(m) for m in messages)
@@ -117,6 +117,9 @@ def should_compact(messages):
 ```
 
 Without this guard, a long conversation with most tokens in the last 5 messages would trigger compression that achieves nothing.
+
+Production value: MIN_SAVINGS = 20000 (matches cli.js zUY=20000).
+For demos: try MIN_SAVINGS=2000 to observe compaction in short sessions.
 
 ## Microcompact: Silent Cleanup
 
@@ -141,15 +144,35 @@ Key: only the **content** is cleared. The tool call structure stays intact. The 
 
 ## Token Estimation
 
-Tokens are estimated using the character-based formula:
+Tokens are estimated using the character-based formula from cli.js:
 
 ```python
 @staticmethod
 def estimate_tokens(text: str) -> int:
-    return len(text) * 4 // 3
+    # cli.js H2: Math.round(A.length / q) with default divisor q=4
+    return len(text) // 4
 ```
 
-This gives a conservative overestimate. Better to compress a bit early than to overflow the context window.
+This approximates 4 characters per token, matching the cli.js ground truth formula.
+
+## Auto-Compact Threshold
+
+The threshold is calculated dynamically, not a fixed percentage:
+
+```python
+def auto_compact_threshold(context_window=200000, max_output=16384):
+    output_reserve = min(max_output, 20000)
+    return context_window - output_reserve - 13000
+    # For 200K window: 200000 - 16384 - 13000 = 170616 (85.3%)
+```
+
+Note: Claude Code detects external file changes via mtime comparison at each turn
+boundary -- not via real-time file watchers. This means changes are noticed at
+the start of each new model turn, not mid-response.
+
+The production system computes 28 different attachment types before each model turn
+(changed files, todo reminders, team context, etc.), all wrapped in `<system-reminder>` tags.
+Our simplified version teaches the core pattern with microcompact and auto-compact.
 
 ## Auto-Compact: Full Summary
 

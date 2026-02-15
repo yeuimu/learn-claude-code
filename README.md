@@ -193,7 +193,7 @@ Each version introduces one core class, but the real learning is in the sub-mech
 | **Tool filtering** | v3 | `AGENT_TYPES` | Explore agents get read-only tools |
 | **Skill injection** | v4 | `SkillLoader` | Content prepended to system prompt |
 | **Microcompact** | v5 | `ContextManager.microcompact()` | Old tool outputs replaced with placeholders |
-| **Auto-compact** | v5 | `ContextManager.auto_compact()` | 93% threshold triggers API summarization |
+| **Auto-compact** | v5 | `ContextManager.auto_compact()` | 85.3% threshold (formula-based) triggers API summarization |
 | **Large output handling** | v5 | `ContextManager.handle_large_output()` | >40K tokens saved to disk, preview returned |
 | **Transcript persistence** | v5 | `ContextManager.save_transcript()` | Full history appended to `.jsonl` |
 | **Task CRUD** | v6 | `TaskManager` | create/get/update/list with JSON persistence |

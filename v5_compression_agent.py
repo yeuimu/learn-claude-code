@@ -95,7 +95,7 @@ def auto_compact_threshold(context_window: int = 200000, max_output: int = 16384
     return context_window - output_reserve - 13000
 
 
-MIN_SAVINGS = 2000
+MIN_SAVINGS = 20000
 MAX_RESTORE_FILES = 5
 MAX_RESTORE_TOKENS_PER_FILE = 5000
 MAX_RESTORE_TOKENS_TOTAL = 50000
@@ -125,8 +125,8 @@ class ContextManager:
 
     @staticmethod
     def estimate_tokens(text: str) -> int:
-        # cli.js PU1: Math.ceil(chars * 1.333) on serialized content
-        return len(text) * 4 // 3
+        # cli.js H2: Math.round(A.length / q) with default divisor q=4
+        return len(text) // 4
 
     def microcompact(self, messages: list) -> list:
         """

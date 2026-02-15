@@ -161,6 +161,15 @@ Traditional AI: knowledge locked in model parameters. To teach new skills: colle
 
 Skills: knowledge stored in editable files. To teach new skills: write a SKILL.md file. Cost: free, timeline: minutes. Anyone can do it.
 
+## Hook Events
+
+The production system supports 15 hook event types (PreToolUse, PostToolUse,
+PostToolUseFailure, Notification, UserPromptSubmit, SessionStart, SessionEnd,
+Stop, SubagentStart, SubagentStop, PreCompact, PermissionRequest, Setup,
+TeammateIdle, TaskCompleted). Our implementation focuses on the core PreToolUse
+and PostToolUse patterns. Hooks are shell commands executed in response to
+specific events, enabling extensibility without changing core code.
+
 ---
 
 **Tools give capability. Skills give expertise.**

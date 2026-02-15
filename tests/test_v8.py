@@ -886,6 +886,38 @@ def test_multi_owner_race_condition():
     return True
 
 
+def test_check_inbox_atomicity():
+    """Verify check_inbox uses lock file to prevent race with _write_to_inbox."""
+    tm = TeammateManager()
+    tm.create_team("lock-team")
+
+    inbox = Path(tempfile.mktemp(suffix=".jsonl"))
+    teammate = Teammate(name="locker", team_name="lock-team", inbox_path=inbox)
+    tm._teams["lock-team"]["locker"] = teammate
+
+    # Write initial message
+    tm.send_message("locker", "msg1", msg_type="message", team_name="lock-team")
+
+    # Hold lock to simulate contention
+    lock_path = inbox.with_suffix(".lock")
+    fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    try:
+        # check_inbox should return empty (cannot acquire lock)
+        msgs = tm.check_inbox("locker", "lock-team")
+        assert msgs == [], "check_inbox should return empty when lock is held"
+    finally:
+        os.close(fd)
+        lock_path.unlink(missing_ok=True)
+
+    # Now without lock, should get the message
+    msgs = tm.check_inbox("locker", "lock-team")
+    assert len(msgs) == 1, f"check_inbox should return message when lock is free, got {len(msgs)}"
+
+    inbox.unlink(missing_ok=True)
+    print("PASS: test_check_inbox_atomicity")
+    return True
+
+
 # =============================================================================
 # LLM Integration Tests
 # =============================================================================
@@ -1090,6 +1122,7 @@ if __name__ == "__main__":
         test_broadcast_to_many_teammates,
         test_broadcast_with_no_teammates,
         test_multi_owner_race_condition,
+        test_check_inbox_atomicity,
         # LLM integration tests
         test_llm_creates_team,
         test_llm_sends_message,

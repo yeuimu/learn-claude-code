@@ -575,15 +575,15 @@ def test_base_url_config():
 # =============================================================================
 
 def test_v5_estimate_tokens():
-    """Test v5 ContextManager token estimation using * 4 // 3 formula."""
+    """Test v5 ContextManager token estimation using // 4 formula."""
     from v5_compression_agent import ContextManager
     cm = ContextManager()
 
     assert cm.estimate_tokens("") == 0
-    # 4 chars * 4 // 3 = 5
-    assert cm.estimate_tokens("abcd") == 5, f"Expected 5, got {cm.estimate_tokens('abcd')}"
-    # 400 chars * 4 // 3 = 533
-    assert cm.estimate_tokens("a" * 400) == 533, f"Expected 533, got {cm.estimate_tokens('a' * 400)}"
+    # 4 chars // 4 = 1
+    assert cm.estimate_tokens("abcd") == 1, f"Expected 1, got {cm.estimate_tokens('abcd')}"
+    # 400 chars // 4 = 100
+    assert cm.estimate_tokens("a" * 400) == 100, f"Expected 100, got {cm.estimate_tokens('a' * 400)}"
 
     print("PASS: test_v5_estimate_tokens")
     return True
@@ -646,7 +646,8 @@ def test_v5_should_compact():
     # With MIN_SAVINGS guard, we need >5 messages (recent 5 are kept) and enough
     # total tokens to exceed TOKEN_THRESHOLD, with savings >= MIN_SAVINGS.
     # Build 8 large messages so the first 3 produce enough savings.
-    chunk_size = cm.TOKEN_THRESHOLD * 3 // (4 * 8) + 100
+    # With len//4: need chunk_size such that 8 * (chunk_size+~30) // 4 > threshold
+    chunk_size = (cm.TOKEN_THRESHOLD * 4) // 8 + 100
     large = [{"role": "user", "content": "x" * chunk_size} for _ in range(8)]
     assert cm.should_compact(large), "Messages exceeding TOKEN_THRESHOLD should trigger compact"
 
@@ -663,9 +664,9 @@ def test_v5_handle_large_output():
     normal = "small output"
     assert cm.handle_large_output(normal) == normal
 
-    # estimate_tokens uses len * 4 // 3. To exceed MAX_OUTPUT_TOKENS (40000),
-    # need len * 4 // 3 > 40000, i.e. len > 30000.
-    large = "x" * 30100
+    # estimate_tokens uses len // 4. To exceed MAX_OUTPUT_TOKENS (40000),
+    # need len // 4 > 40000, i.e. len > 160000.
+    large = "x" * 160100
     result = cm.handle_large_output(large)
     assert "too large" in result.lower() or "Saved to" in result
 
@@ -1691,21 +1692,21 @@ def test_v5_compactable_tools_set():
 
 
 def test_v5_estimate_tokens_precision():
-    """Verify estimate_tokens uses chars * 4 // 3 ratio."""
+    """Verify estimate_tokens uses chars // 4 ratio."""
     from v5_compression_agent import ContextManager
     cm = ContextManager()
     # 0 chars -> 0 tokens
     assert cm.estimate_tokens("") == 0
-    # 4 chars -> 4*4//3 = 5
-    assert cm.estimate_tokens("abcd") == 5
-    # 3 chars -> 3*4//3 = 4
-    assert cm.estimate_tokens("abc") == 4
-    # 8 chars -> 8*4//3 = 10
-    assert cm.estimate_tokens("12345678") == 10
-    # 100 chars -> 100*4//3 = 133
-    assert cm.estimate_tokens("x" * 100) == 133
-    # 300 chars -> 300*4//3 = 400
-    assert cm.estimate_tokens("a" * 300) == 400
+    # 4 chars -> 4//4 = 1
+    assert cm.estimate_tokens("abcd") == 1
+    # 3 chars -> 3//4 = 0
+    assert cm.estimate_tokens("abc") == 0
+    # 8 chars -> 8//4 = 2
+    assert cm.estimate_tokens("12345678") == 2
+    # 100 chars -> 100//4 = 25
+    assert cm.estimate_tokens("x" * 100) == 25
+    # 300 chars -> 300//4 = 75
+    assert cm.estimate_tokens("a" * 300) == 75
     print("PASS: test_v5_estimate_tokens_precision")
     return True
 
@@ -1777,14 +1778,15 @@ def test_v5_should_compact_various_thresholds():
 
     # should_compact has MIN_SAVINGS guard: if <= 5 messages, savings=0 -> always False.
     # To properly test threshold, use > 5 messages.
-    # Below threshold: each message produces ~(chunk*4//3) tokens. 8 messages total
+    # Below threshold: each message produces ~(chunk//4) tokens. 8 messages total
     # must stay below threshold.
-    below_per_msg = threshold * 3 // (4 * 8) - 50
+    # With len//4: chars_per_msg = threshold * 4 / 8 = threshold / 2, minus margin
+    below_per_msg = (threshold * 4) // 8 - 200
     below = [{"role": "user", "content": "x" * below_per_msg} for _ in range(8)]
     assert not cm.should_compact(below), f"Should not trigger compact below threshold"
 
     # Above threshold: each message produces enough to exceed threshold total.
-    above_per_msg = threshold * 3 // (4 * 8) + 200
+    above_per_msg = (threshold * 4) // 8 + 200
     above = [{"role": "user", "content": "x" * above_per_msg} for _ in range(8)]
     assert cm.should_compact(above), f"Should trigger compact above threshold"
 
@@ -1797,15 +1799,15 @@ def test_v5_handle_large_output_at_boundary():
     from v5_compression_agent import ContextManager
     cm = ContextManager()
 
-    # estimate_tokens uses len(text) * 4 // 3.
-    # MAX_OUTPUT_TOKENS = 40000. At boundary: need len such that len * 4 // 3 == 40000.
-    # len = 40000 * 3 // 4 = 30000. Verify: 30000 * 4 // 3 = 40000. Exactly at threshold.
-    at_threshold = "x" * 30000
+    # estimate_tokens uses len(text) // 4.
+    # MAX_OUTPUT_TOKENS = 40000. At boundary: need len such that len // 4 == 40000.
+    # len = 40000 * 4 = 160000. Verify: 160000 // 4 = 40000. Exactly at threshold.
+    at_threshold = "x" * 160000
     result = cm.handle_large_output(at_threshold)
     assert result == at_threshold, "At exactly the threshold, output should pass through"
 
-    # 1 char over: 30001 * 4 // 3 = 40001 > 40000
-    over_threshold = "x" * 30001
+    # 4 chars over: 160004 // 4 = 40001 > 40000
+    over_threshold = "x" * 160004
     result = cm.handle_large_output(over_threshold)
     assert "too large" in result.lower() or "Output too large" in result or "Saved to" in result, \
         f"Over threshold should be saved to file, got: {result[:100]}"
@@ -2258,6 +2260,23 @@ def test_v9_teammate_loop_phases():
     return True
 
 
+def test_context_manager_parity():
+    """Verify ContextManager is identical across v5-v9."""
+    import inspect
+    from v5_compression_agent import ContextManager as CM5
+    from v6_tasks_agent import ContextManager as CM6
+    from v7_background_agent import ContextManager as CM7
+    from v8_team_agent import ContextManager as CM8
+    from v9_autonomous_agent import ContextManager as CM9
+
+    src5 = inspect.getsource(CM5)
+    for name, cls in [("v6", CM6), ("v7", CM7), ("v8", CM8), ("v9", CM9)]:
+        src = inspect.getsource(cls)
+        assert src == src5, f"ContextManager in {name} differs from v5"
+    print("PASS: test_context_manager_parity")
+    return True
+
+
 # =============================================================================
 # Main
 # =============================================================================
@@ -2401,6 +2420,8 @@ if __name__ == "__main__":
         test_v9_teammate_identity_injection,
         test_v9_unclaimed_task_filter,
         test_v9_teammate_loop_phases,
+        # --- NEW: cross-version parity tests ---
+        test_context_manager_parity,
     ]
 
     failed = []

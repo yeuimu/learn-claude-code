@@ -186,6 +186,15 @@ Skills 承认：**领域知识本身就是一种资源**，需要被显式管理
 | v3 | 分而治之 | ~150 | 子代理隔离上下文 |
 | **v4** | **领域专家** | **~100** | **Skills 注入专业知识** |
 
+## Hook 事件
+
+生产系统支持 15 种 hook 事件类型（PreToolUse, PostToolUse,
+PostToolUseFailure, Notification, UserPromptSubmit, SessionStart, SessionEnd,
+Stop, SubagentStart, SubagentStop, PreCompact, PermissionRequest, Setup,
+TeammateIdle, TaskCompleted）。我们的实现聚焦于核心的 PreToolUse
+和 PostToolUse 模式。Hook 是响应特定事件执行的 shell 命令，
+无需修改核心代码即可实现扩展。
+
 ---
 
 **工具让模型能做事，技能让模型知道怎么做。**

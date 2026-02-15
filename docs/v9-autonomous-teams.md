@@ -21,13 +21,13 @@ v8 Teammate (one-shot):
                               (one chance)
 
 v9 Teammate (persistent with idle cycle):
-  spawn -> work (tool loop) -> idle (poll 2s x 30) -> wake or timeout
+  spawn -> work (tool loop) -> idle (poll 1s x 60) -> wake or timeout
 
   +-------+     +------+          +------+
   | spawn | --> | WORK | -------> | IDLE | -------> timeout? -> shutdown
   +-------+     +--+---+          +--+---+
                    ^                 |
-                   |     msg/task    |    poll every 2s
+                   |     msg/task    |    poll every 1s
                    +----- found -----+    for 60 seconds
                                      |
                                      +--- check inbox
@@ -44,7 +44,7 @@ v9 Teammate (persistent with idle cycle):
 |---------|---------------------|----------------------|
 | Teammate loop | Work then exit | Work -> idle -> wake -> work |
 | Task claiming | None (lead assigns) | Auto-claim unclaimed tasks |
-| Idle cycle | None | 2s polling, 60s timeout |
+| Idle cycle | None | 1s polling, 60s timeout |
 | Identity preservation | None | Re-inject after compression |
 | Plan approval | Stub | Full protocol support |
 
@@ -64,7 +64,7 @@ v9 Teammate (persistent with idle cycle):
     | stop_reason != tool_use
     v
 +--------+
-| IDLE   |  <-- poll every IDLE_POLL_INTERVAL (2s)
+| IDLE   |  <-- poll every IDLE_POLL_INTERVAL (1s)
 | phase  |      for IDLE_TIMEOUT (60s)
 +---+----+
     |
@@ -83,7 +83,7 @@ v9 Teammate (persistent with idle cycle):
 ## Autonomy Constants
 
 ```python
-IDLE_POLL_INTERVAL = 2     # seconds between idle polls
+IDLE_POLL_INTERVAL = 1     # seconds between idle polls (cli.js cZz=1000ms)
 IDLE_TIMEOUT = 60          # seconds before giving up on new work
 
 IDLE_REASONS = {
@@ -127,7 +127,7 @@ def _teammate_loop(self, teammate, initial_prompt):
         # === Idle phase: wait for new messages or unclaimed tasks ===
         teammate.status = "idle"
 
-        for _ in range(30):  # 30 checks x 2s = 60s
+        for _ in range(60):  # 60 checks x 1s = 60s
             if teammate.status == "shutdown":
                 return
 
@@ -148,7 +148,7 @@ def _teammate_loop(self, teammate, initial_prompt):
                 })
                 break
 
-            time.sleep(2)
+            time.sleep(1)
 ```
 
 ## Auto-Claiming Tasks

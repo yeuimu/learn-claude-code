@@ -193,7 +193,7 @@ while True:
 | **工具过滤** | v3 | `AGENT_TYPES` | Explore 代理只获得只读工具 |
 | **Skill 注入** | v4 | `SkillLoader` | 内容前置到 system prompt |
 | **微压缩** | v5 | `ContextManager.microcompact()` | 旧工具输出替换为占位符 |
-| **自动压缩** | v5 | `ContextManager.auto_compact()` | 93% 阈值触发 API 摘要 |
+| **自动压缩** | v5 | `ContextManager.auto_compact()` | 85.3% 阈值（公式计算）触发 API 摘要 |
 | **大输出处理** | v5 | `ContextManager.handle_large_output()` | >40K token 存盘，返回预览 |
 | **记录持久化** | v5 | `ContextManager.save_transcript()` | 完整历史追加到 `.jsonl` |
 | **任务 CRUD** | v6 | `TaskManager` | create/get/update/list + JSON 持久化 |
@@ -205,7 +205,7 @@ while True:
 | **Teammate 生命周期** | v8 | `_teammate_loop()` | active -> 工作 -> 检查邮箱 -> 退出 |
 | **文件邮箱** | v8 | `send_message()/check_inbox()` | JSONL 格式，每个 Teammate 独立文件 |
 | **消息协议** | v8 | `MESSAGE_TYPES` | 5 种：message, broadcast, shutdown_req/resp, plan_approval |
-| **工具权限** | v8 | `TEAMMATE_TOOLS` | Teammate 获得 8 个工具（无 TeamCreate/Delete） |
+| **工具权限** | v8 | `TEAMMATE_TOOLS` | Teammate 获得 9 个工具（无 TeamCreate/Delete） |
 | **空闲循环** | v9 | `_teammate_loop()` | active -> idle -> 轮询邮箱 -> 唤醒 -> active |
 | **任务认领** | v9 | `_teammate_loop()` | 空闲 Teammate 自动认领未分配任务 |
 | **身份保持** | v9 | `auto_compact` + identity | 压缩后重新注入 Teammate 名称/角色 |
