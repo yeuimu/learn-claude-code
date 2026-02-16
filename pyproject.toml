@@ -1,0 +1,11 @@
+[project]
+name = "learn-claude-code"
+version = "0.1.0"
+description = "Learn how modern AI agents work by building one from scratch."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "dotenv>=0.9.9",
+    "openai>=2.20.0",
+]
+
