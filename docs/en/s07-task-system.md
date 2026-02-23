@@ -1,28 +1,31 @@
 # s07: Tasks
 
-> Tasks persist as JSON files on the filesystem with a dependency graph, so they survive context compression and can be shared across agents.
+> Tasks are persisted as JSON files with a dependency graph, so state survives context compression and can be shared across agents.
 
-## The Problem
+## Problem
 
-In-memory state like TodoManager (s03) is lost when the context is
-compressed (s06). After auto_compact replaces messages with a summary,
-the todo list is gone. The agent has to reconstruct it from the summary
-text, which is lossy and error-prone.
+In-memory state (for example the TodoManager from s03) is fragile under compression (s06). Once earlier turns are compacted into summaries, in-memory todo state is gone.
 
-This is the critical s06-to-s07 bridge: TodoManager items die with
-compression; file-based tasks don't. Moving state to the filesystem
-makes it compression-proof.
+s06 -> s07 is the key transition:
 
-More fundamentally, in-memory state is invisible to other agents.
-When we eventually build teams (s09+), teammates need a shared task
-board. In-memory data structures are process-local.
+1. Todo list state in memory is conversational and lossy.
+2. Task board state on disk is durable and recoverable.
 
-The solution is to persist tasks as JSON files in `.tasks/`. Each task
-is a separate file with an ID, subject, status, and dependency graph.
-Completing task 1 automatically unblocks task 2 if task 2 has
-`blockedBy: [1]`. The file system becomes the source of truth.
+A second issue is visibility: in-memory structures are process-local, so teammates cannot reliably share that state.
 
-## The Solution
+## When to Use Task vs Todo
+
+From s07 onward, Task is the default. Todo remains for short linear checklists.
+
+## Quick Decision Matrix
+
+| Situation | Prefer | Why |
+|---|---|---|
+| Short, single-session checklist | Todo | Lowest ceremony, fastest capture |
+| Cross-session work, dependencies, or teammates | Task | Durable state, dependency graph, shared visibility |
+| Unsure which one to use | Task | Easier to simplify later than migrate mid-run |
+
+## Solution
 
 ```
 .tasks/
@@ -42,7 +45,7 @@ Dependency resolution:
 
 ## How It Works
 
-1. The TaskManager provides CRUD operations. Each task is a JSON file.
+1. TaskManager provides CRUD with one JSON file per task.
 
 ```python
 class TaskManager:
@@ -61,8 +64,7 @@ class TaskManager:
         return json.dumps(task, indent=2)
 ```
 
-2. When a task is marked completed, `_clear_dependency` removes its ID
-   from all other tasks' `blockedBy` lists.
+2. Completing a task clears that dependency from other tasks.
 
 ```python
 def _clear_dependency(self, completed_id: int):
@@ -73,8 +75,7 @@ def _clear_dependency(self, completed_id: int):
             self._save(task)
 ```
 
-3. The `update` method handles status changes and bidirectional dependency
-   wiring.
+3. `update` handles status transitions and dependency wiring.
 
 ```python
 def update(self, task_id, status=None,
@@ -94,7 +95,7 @@ def update(self, task_id, status=None,
     self._save(task)
 ```
 
-4. Four task tools are added to the dispatch map.
+4. Task tools are added to the dispatch map.
 
 ```python
 TOOL_HANDLERS = {
@@ -109,8 +110,7 @@ TOOL_HANDLERS = {
 
 ## Key Code
 
-The TaskManager with dependency graph (from `agents/s07_task_system.py`,
-lines 46-123):
+TaskManager with dependency graph (from `agents/s07_task_system.py`, lines 46-123):
 
 ```python
 class TaskManager:
@@ -145,17 +145,20 @@ class TaskManager:
 
 ## What Changed From s06
 
-| Component      | Before (s06)     | After (s07)                |
-|----------------|------------------|----------------------------|
-| Tools          | 5                | 8 (+task_create/update/list/get)|
-| State storage  | In-memory only   | JSON files in .tasks/      |
-| Dependencies   | None             | blockedBy + blocks graph   |
-| Compression    | Three-layer      | Removed (different focus)  |
-| Persistence    | Lost on compact  | Survives compression       |
+| Component | Before (s06) | After (s07) |
+|---|---|---|
+| Tools | 5 | 8 (`task_create/update/list/get`) |
+| State storage | In-memory only | JSON files in `.tasks/` |
+| Dependencies | None | `blockedBy + blocks` graph |
+| Persistence | Lost on compact | Survives compression |
 
 ## Design Rationale
 
-File-based state survives context compression. When the agent's conversation is compacted, in-memory state is lost, but tasks written to disk persist. The dependency graph ensures correct execution order even after context loss. This is the bridge between ephemeral conversation and persistent work -- the agent can forget conversation details but always has the task board to remind it what needs doing. The filesystem as source of truth also enables future multi-agent sharing, since any process can read the same JSON files.
+File-based state survives compaction and process restarts. The dependency graph preserves execution order even when conversation details are forgotten. This turns transient chat context into durable work state.
+
+Durability still needs a write discipline: reload task JSON before each write, validate expected `status/blockedBy`, then persist atomically. Otherwise concurrent writers can overwrite each other.
+
+Course-level implication: s07+ defaults to Task because it better matches long-running and collaborative engineering workflows.
 
 ## Try It
 
@@ -164,7 +167,7 @@ cd learn-claude-code
 python agents/s07_task_system.py
 ```
 
-Example prompts to try:
+Suggested prompts:
 
 1. `Create 3 tasks: "Setup project", "Write code", "Write tests". Make them depend on each other in order.`
 2. `List all tasks and show the dependency graph`

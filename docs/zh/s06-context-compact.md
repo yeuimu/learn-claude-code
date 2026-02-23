@@ -149,7 +149,6 @@ def agent_loop(messages):
 | Auto-compact   | 无               | token 阈值触发             |
 | Manual compact | 无               | `compact` 工具             |
 | Transcripts    | 无               | 保存到 .transcripts/       |
-| Skills         | load_skill       | 已移除 (非本节重点)        |
 
 ## 设计原理
 

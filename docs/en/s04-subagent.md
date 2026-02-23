@@ -14,7 +14,7 @@ does this project use?" might require reading 5 files, but the parent
 agent does not need all 5 file contents in its history -- it just needs
 the answer: "pytest with conftest.py configuration."
 
-The solution is process isolation: spawn a child agent with `messages=[]`.
+In this course, a practical solution is fresh-context isolation: spawn a child agent with `messages=[]`.
 The child explores, reads files, runs commands. When it finishes, only its
 final text response returns to the parent. The child's entire message
 history is discarded.
@@ -137,11 +137,10 @@ def run_subagent(prompt: str) -> str:
 | Context        | Single shared    | Parent + child isolation  |
 | Subagent       | None             | `run_subagent()` function |
 | Return value   | N/A              | Summary text only         |
-| Todo system    | TodoManager      | Removed (not needed here) |
 
 ## Design Rationale
 
-Process isolation gives context isolation for free. A fresh `messages[]` means the subagent cannot be confused by the parent's conversation history. The tradeoff is communication overhead -- results must be compressed back to the parent, losing detail. This is the same tradeoff as OS process isolation: safety and cleanliness in exchange for serialization cost. Limiting subagent depth (no recursive spawning) prevents unbounded resource consumption, and a max iteration count ensures runaway children terminate.
+Fresh-context isolation is a practical way to approximate context isolation in this session. A fresh `messages[]` means the subagent starts without the parent's conversation history. The tradeoff is communication overhead -- results must be compressed back to the parent, losing detail. This is a message-history isolation strategy, not OS process isolation. Limiting subagent depth (no recursive spawning) prevents unbounded resource consumption, and a max iteration count ensures runaway children terminate.
 
 ## Try It
 

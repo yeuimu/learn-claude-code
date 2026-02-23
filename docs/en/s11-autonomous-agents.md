@@ -20,10 +20,7 @@ original system prompt identity ("you are alice, role: coder") fades.
 Identity re-injection solves this by inserting an identity block at the
 start of compressed contexts.
 
-Teaching simplification: the token estimation used here is rough
-(characters / 4). Production systems use proper tokenizer libraries.
-The nag threshold of 3 rounds (from s03) is set low for teaching
-visibility; production agents typically use a higher threshold around 10.
+Note: token estimation here uses characters/4 (rough). The nag threshold of 3 rounds is low for teaching visibility.
 
 ## The Solution
 

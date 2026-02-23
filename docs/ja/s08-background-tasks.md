@@ -157,7 +157,6 @@ class BackgroundManager:
 | Execution      | Blocking only    | Blocking + background threads|
 | Notification   | None             | Queue drained per loop     |
 | Concurrency    | None             | Daemon threads             |
-| Task system    | File-based CRUD  | Removed (different focus)  |
 
 ## 設計原理
 

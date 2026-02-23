@@ -1,4 +1,4 @@
-# Learn Claude Code -- Build an AI Agent From Scratch
+# Learn Claude Code -- A nano Claude Code-like agent, built from 0 to 1
 
 [English](./README.md) | [中文](./README-zh.md) | [日本語](./README-ja.md)
 
@@ -17,16 +17,16 @@
                     loop back -----------------> messages[]
 
 
-    That's it. Every AI coding agent is this loop.
-    Everything else is refinement.
+    That's the minimal loop. Every AI coding agent needs this loop.
+    Production agents add policy, permissions, and lifecycle layers.
 ```
 
-**11 progressive sessions, from a simple loop to full autonomous teams.**
+**12 progressive sessions, from a simple loop to isolated autonomous execution.**
 **Each session adds one mechanism. Each mechanism has one motto.**
 
 > **s01** &nbsp; *"Bash is all you need"* &mdash; one tool + one loop = an agent
 >
-> **s02** &nbsp; *"The loop didn't change"* &mdash; adding tools means adding handlers, not logic
+> **s02** &nbsp; *"The loop didn't change"* &mdash; adding tools means adding handlers, not rewriting the loop
 >
 > **s03** &nbsp; *"Plan before you act"* &mdash; visible plans improve task completion
 >
@@ -45,6 +45,8 @@
 > **s10** &nbsp; *"Same request_id, two protocols"* &mdash; one FSM pattern powers shutdown + plan approval
 >
 > **s11** &nbsp; *"Poll, claim, work, repeat"* &mdash; no coordinator needed, agents self-organize
+>
+> **s12** &nbsp; *"Isolate by directory, coordinate by task ID"* &mdash; task board + optional worktree lanes
 
 ---
 
@@ -77,6 +79,19 @@ def agent_loop(messages):
 
 Every session layers one mechanism on top of this loop -- without changing the loop itself.
 
+## Scope (Important)
+
+This repository is a 0->1 learning project for building a nano Claude Code-like agent.
+It intentionally simplifies or omits several production mechanisms:
+
+- Full event/hook buses (for example PreToolUse, SessionStart/End, ConfigChange).  
+  s12 includes only a minimal append-only lifecycle event stream for teaching.
+- Rule-based permission governance and trust workflows
+- Session lifecycle controls (resume/fork) and advanced worktree lifecycle controls
+- Full MCP runtime details (transport/OAuth/resource subscribe/polling)
+
+Treat the team JSONL mailbox protocol in this repo as a teaching implementation, not a claim about any specific production internals.
+
 ## Quick Start
 
 ```sh
@@ -87,6 +102,7 @@ cp .env.example .env   # Edit .env with your ANTHROPIC_API_KEY
 
 python agents/s01_agent_loop.py       # Start here
 python agents/s11_autonomous_agents.py  # Full autonomous team
+python agents/s12_worktree_task_isolation.py  # Task-aware worktree isolation
 ```
 
 ### Web Platform
@@ -124,6 +140,9 @@ s08  Background Tasks        [6]     s10  Team Protocols          [12]
                                           |
                                      s11  Autonomous Agents       [14]
                                           idle cycle + auto-claim
+                                     |
+                                     s12  Worktree Isolation      [16]
+                                          task coordination + optional isolated execution lanes
 
                                      [N] = number of tools
 ```
@@ -133,7 +152,7 @@ s08  Background Tasks        [6]     s10  Team Protocols          [12]
 ```
 learn-claude-code/
 |
-|-- agents/                        # Python reference implementations (s01-s11 + full)
+|-- agents/                        # Python reference implementations (s01-s12 + full)
 |-- docs/{en,zh,ja}/               # Mental-model-first documentation (3 languages)
 |-- web/                           # Interactive learning platform (Next.js)
 |-- skills/                        # Skill files for s05
@@ -158,6 +177,7 @@ Available in [English](./docs/en/) | [中文](./docs/zh/) | [日本語](./docs/j
 | [s09](./docs/en/s09-agent-teams.md) | Agent Teams | *Append to send, drain to read* |
 | [s10](./docs/en/s10-team-protocols.md) | Team Protocols | *Same request_id, two protocols* |
 | [s11](./docs/en/s11-autonomous-agents.md) | Autonomous Agents | *Poll, claim, work, repeat* |
+| [s12](./docs/en/s12-worktree-task-isolation.md) | Worktree + Task Isolation | *Isolate by directory, coordinate by task ID* |
 
 ## License
 

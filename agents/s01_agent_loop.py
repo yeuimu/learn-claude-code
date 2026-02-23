@@ -2,7 +2,7 @@
 """
 s01_agent_loop.py - The Agent Loop
 
-The entire secret of coding agents in one pattern:
+The entire secret of an AI coding agent in one pattern:
 
     while stop_reason == "tool_use":
         response = LLM(messages, tools)
@@ -18,8 +18,9 @@ The entire secret of coding agents in one pattern:
                           +---------------+
                           (loop continues)
 
-That's it. The ENTIRE agent is a while loop that feeds tool
-results back to the model until the model decides to stop.
+This is the core loop: feed tool results back to the model
+until the model decides to stop. Production agents layer
+policy, hooks, and lifecycle controls on top.
 """
 
 import os

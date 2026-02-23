@@ -1,16 +1,29 @@
 # s07: Tasks
 
-> タスクはファイルシステム上にJSON形式で依存グラフ付きで永続化され、コンテキスト圧縮後も生き残り、複数エージェント間で共有できる。
+> タスクを依存グラフ付き JSON として永続化し、コンテキスト圧縮後も状態を保持し、複数エージェントで共有できるようにする。
 
 ## 問題
 
-インメモリの状態であるTodoManager(s03)は、コンテキストが圧縮(s06)されると失われる。auto_compactがメッセージを要約で置換した後、todoリストは消える。エージェントは要約テキストからそれを再構成しなければならないが、これは不正確でエラーが起きやすい。
+インメモリ状態（s03 の TodoManager など）は、s06 の圧縮後に失われやすい。古いターンが要約化されると、Todo 状態は会話の外に残らない。
 
-これがs06からs07への重要な橋渡しだ: TodoManagerのアイテムは圧縮と共に死ぬが、ファイルベースのタスクは死なない。状態をファイルシステムに移すことで、圧縮に対する耐性が得られる。
+s06 -> s07 の本質は次の切替:
 
-さらに根本的な問題として、インメモリの状態は他のエージェントからは見えない。最終的にチーム(s09以降)を構築する際、チームメイトには共有のタスクボードが必要だ。インメモリのデータ構造はプロセスローカルだ。
+1. メモリ上 Todo は会話依存で失われやすい。
+2. ディスク上 Task は永続で復元しやすい。
 
-解決策はタスクを`.tasks/`にJSON形式で永続化すること。各タスクはID、件名、ステータス、依存グラフを持つ個別のファイルだ。タスク1を完了すると、タスク2が`blockedBy: [1]`を持つ場合、自動的にタスク2のブロックが解除される。ファイルシステムが信頼できる情報源となる。
+さらに可視性の問題がある。インメモリ構造はプロセスローカルであり、チームメイト間の共有が不安定になる。
+
+## Task vs Todo: 使い分け
+
+s07 以降は Task がデフォルト。Todo は短い直線的チェックリスト用に残る。
+
+## クイック判定マトリクス
+
+| 状況 | 優先 | 理由 |
+|---|---|---|
+| 短時間・単一セッション・直線的チェック | Todo | 儀式が最小で記録が速い |
+| セッション跨ぎ・依存関係・複数担当 | Task | 永続性、依存表現、協調可視性が必要 |
+| 迷う場合 | Task | 後で簡略化する方が、途中移行より低コスト |
 
 ## 解決策
 
@@ -32,7 +45,7 @@ Dependency resolution:
 
 ## 仕組み
 
-1. TaskManagerがCRUD操作を提供する。各タスクは1つのJSONファイル。
+1. TaskManager はタスクごとに1 JSON ファイルで CRUD を提供する。
 
 ```python
 class TaskManager:
@@ -51,7 +64,7 @@ class TaskManager:
         return json.dumps(task, indent=2)
 ```
 
-2. タスクが完了とマークされると、`_clear_dependency`がそのIDを他のすべてのタスクの`blockedBy`リストから除去する。
+2. タスク完了時、他タスクの依存を解除する。
 
 ```python
 def _clear_dependency(self, completed_id: int):
@@ -62,7 +75,7 @@ def _clear_dependency(self, completed_id: int):
             self._save(task)
 ```
 
-3. `update`メソッドがステータス変更と双方向の依存関係の結線を処理する。
+3. `update` が状態遷移と依存配線を担う。
 
 ```python
 def update(self, task_id, status=None,
@@ -82,7 +95,7 @@ def update(self, task_id, status=None,
     self._save(task)
 ```
 
-4. 4つのタスクツールがディスパッチマップに追加される。
+4. タスクツール群をディスパッチへ追加する。
 
 ```python
 TOOL_HANDLERS = {
@@ -97,7 +110,7 @@ TOOL_HANDLERS = {
 
 ## 主要コード
 
-依存グラフ付きTaskManager(`agents/s07_task_system.py` 46-123行目):
+依存グラフ付き TaskManager（`agents/s07_task_system.py` 46-123行）:
 
 ```python
 class TaskManager:
@@ -130,19 +143,22 @@ class TaskManager:
                 self._save(task)
 ```
 
-## s06からの変更点
+## s06 からの変更
 
-| Component      | Before (s06)     | After (s07)                |
-|----------------|------------------|----------------------------|
-| Tools          | 5                | 8 (+task_create/update/list/get)|
-| State storage  | In-memory only   | JSON files in .tasks/      |
-| Dependencies   | None             | blockedBy + blocks graph   |
-| Compression    | Three-layer      | Removed (different focus)  |
-| Persistence    | Lost on compact  | Survives compression       |
+| 項目 | Before (s06) | After (s07) |
+|---|---|---|
+| Tools | 5 | 8 (`task_create/update/list/get`) |
+| 状態保存 | メモリのみ | `.tasks/` の JSON |
+| 依存関係 | なし | `blockedBy + blocks` グラフ |
+| 永続性 | compact で消失 | compact 後も維持 |
 
 ## 設計原理
 
-ファイルベースの状態はコンテキスト圧縮を生き延びる。エージェントの会話が圧縮されるとメモリ内の状態は失われるが、ディスクに書き込まれたタスクは永続する。依存グラフにより、コンテキストが失われた後でも正しい順序で実行される。これは一時的な会話と永続的な作業の橋渡しだ -- エージェントは会話の詳細を忘れても、タスクボードが常に何をすべきかを思い出させてくれる。ファイルシステムを信頼できる情報源とすることで、将来のマルチエージェント共有も可能になる。任意のプロセスが同じJSONファイルを読み取れるからだ。
+ファイルベース状態は compaction や再起動に強い。依存グラフにより、会話詳細を忘れても実行順序を保てる。これにより、会話中心の状態を作業中心の永続状態へ移せる。
+
+ただし耐久性には運用前提がある。書き込みのたびに task JSON を再読込し、`status/blockedBy` が期待通りか確認してから原子的に保存しないと、並行更新で状態を上書きしやすい。
+
+コース設計上、s07 以降で Task を主線に置くのは、長時間・協調開発の実態に近いから。
 
 ## 試してみる
 
@@ -151,7 +167,7 @@ cd learn-claude-code
 python agents/s07_task_system.py
 ```
 
-試せるプロンプト例:
+例:
 
 1. `Create 3 tasks: "Setup project", "Write code", "Write tests". Make them depend on each other in order.`
 2. `List all tasks and show the dependency graph`

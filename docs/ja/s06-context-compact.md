@@ -149,7 +149,6 @@ def agent_loop(messages):
 | Auto-compact   | None             | Token threshold trigger    |
 | Manual compact | None             | `compact` tool             |
 | Transcripts    | None             | Saved to .transcripts/     |
-| Skills         | load_skill       | Removed (different focus)  |
 
 ## 設計原理
 

@@ -1,6 +1,6 @@
 # s09: Agent Teams
 
-> Persistent teammates with JSONL inboxes turn isolated agents into a communicating team -- spawn, message, broadcast, and drain.
+> Persistent teammates with JSONL inboxes are one teaching protocol for turning isolated agents into a communicating team -- spawn, message, broadcast, and drain.
 
 ## The Problem
 
@@ -215,7 +215,7 @@ pattern used here is safe for the teaching scenario.
 
 ## Design Rationale
 
-File-based mailboxes (append-only JSONL) provide concurrency-safe inter-agent communication. Append is atomic on most filesystems, avoiding lock contention. The "drain on read" pattern (read all, truncate) gives batch delivery. This is simpler and more robust than shared memory or socket-based IPC for agent coordination. The tradeoff is latency -- messages are only seen at the next poll -- but for LLM-driven agents where each turn takes seconds, polling latency is negligible compared to inference time.
+File-based mailboxes (append-only JSONL) are easy to inspect and reason about in a teaching codebase. The "drain on read" pattern (read all, truncate) gives batch delivery with very little machinery. The tradeoff is latency -- messages are only seen at the next poll -- but for LLM-driven agents where each turn takes seconds, polling latency is acceptable for this course.
 
 ## Try It
 

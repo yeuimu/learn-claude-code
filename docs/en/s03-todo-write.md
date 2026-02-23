@@ -19,9 +19,7 @@ explicitly. The model creates a plan, marks items in_progress as it works,
 and marks them completed when done. A nag reminder injects a nudge if the
 model goes 3+ rounds without updating its todos.
 
-Teaching simplification: the nag threshold of 3 rounds is set low for
-teaching visibility. Production agents typically use a higher threshold
-around 10 to avoid excessive prompting.
+Note: the nag threshold of 3 rounds is low for visibility. Production systems tune higher. From s07, this course switches to the Task board for durable multi-step work; TodoWrite remains available for quick checklists.
 
 ## The Solution
 

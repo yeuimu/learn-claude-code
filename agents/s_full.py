@@ -3,12 +3,13 @@
 s_full.py - Full Reference Agent
 
 Capstone implementation combining every mechanism from s01-s11.
+Session s12 (task-aware worktree isolation) is taught separately.
 NOT a teaching session -- this is the "put it all together" reference.
 
     +------------------------------------------------------------------+
     |                        FULL AGENT                                 |
     |                                                                   |
-    |  System prompt (s05 skills, s03 todo nag)                        |
+    |  System prompt (s05 skills, task-first + optional todo nag)      |
     |                                                                   |
     |  Before each LLM call:                                            |
     |  +--------------------+  +------------------+  +--------------+  |
@@ -149,6 +150,9 @@ class TodoManager:
         done = sum(1 for t in self.items if t["status"] == "completed")
         lines.append(f"\n({done}/{len(self.items)} completed)")
         return "\n".join(lines)
+
+    def has_open_items(self) -> bool:
+        return any(item.get("status") != "completed" for item in self.items)
 
 
 # === SECTION: subagent (s04) ===
@@ -545,12 +549,10 @@ BUS = MessageBus()
 TEAM = TeammateManager(BUS, TASK_MGR)
 
 # === SECTION: system_prompt ===
-SYSTEM = f"""You are a coding agent at {WORKDIR}.
-Use tools to solve tasks. Use TodoWrite for multi-step work.
+SYSTEM = f"""You are a coding agent at {WORKDIR}. Use tools to solve tasks.
+Prefer task_create/task_update/task_list for multi-step work. Use TodoWrite for short checklists.
 Use task for subagent delegation. Use load_skill for specialized knowledge.
-
-Skills available:
-{SKILLS.descriptions()}"""
+Skills: {SKILLS.descriptions()}"""
 
 
 # === SECTION: shutdown_protocol (s10) ===
@@ -692,9 +694,9 @@ def agent_loop(messages: list):
                 results.append({"type": "tool_result", "tool_use_id": block.id, "content": str(output)})
                 if block.name == "TodoWrite":
                     used_todo = True
-        # s03: nag reminder
+        # s03: nag reminder (only when todo workflow is active)
         rounds_without_todo = 0 if used_todo else rounds_without_todo + 1
-        if rounds_without_todo >= 3:
+        if TODO.has_open_items() and rounds_without_todo >= 3:
             results.insert(0, {"type": "text", "text": "<reminder>Update your todos.</reminder>"})
         messages.append({"role": "user", "content": results})
         # s06: manual compress

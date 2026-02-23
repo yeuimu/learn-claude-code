@@ -1,6 +1,6 @@
 # s01: The Agent Loop
 
-> The entire secret of AI coding agents is a while loop that feeds tool results back to the model until the model decides to stop.
+> The core of a coding agent is a while loop that feeds tool results back to the model until the model decides to stop.
 
 ## The Problem
 
@@ -59,7 +59,8 @@ messages.append({"role": "assistant", "content": response.content})
 ```
 
 4. We check the stop reason. If the model did not call a tool, the loop
-   ends. This is the only exit condition.
+   ends. In this minimal lesson implementation, this is the only loop exit
+   condition.
 
 ```python
 if response.stop_reason != "tool_use":
@@ -126,7 +127,7 @@ This is session 1 -- the starting point. There is no prior session.
 
 ## Design Rationale
 
-This loop is the universal foundation of all LLM-based agents. Production implementations add error handling, token counting, streaming, and retry logic, but the fundamental structure is unchanged. The simplicity is the point: one exit condition (`stop_reason != "tool_use"`) controls the entire flow. Everything else in this course -- tools, planning, compression, teams -- layers on top of this loop without modifying it. Understanding this loop means understanding every agent.
+This loop is the foundation of LLM-based agents. Production implementations add error handling, token counting, streaming, retry logic, permission policy, and lifecycle orchestration, but the core interaction pattern still starts here. The simplicity is the point for this session: in this minimal implementation, one exit condition (`stop_reason != "tool_use"`) controls the flow we need to learn first. Everything else in this course layers on top of this loop. Understanding this loop gives you the base model, not the full production architecture.
 
 ## Try It
 

@@ -62,7 +62,7 @@ const STEPS = [
   {
     title: "Clean Context",
     description:
-      "The parent gets a clean summary without context bloat. This is process isolation for LLMs.",
+      "The parent gets a clean summary without context bloat. This is fresh-context isolation via messages[].",
   },
 ];
 

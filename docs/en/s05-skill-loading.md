@@ -144,7 +144,6 @@ class SkillLoader:
 | System prompt  | Static string    | + skill descriptions       |
 | Knowledge      | None             | .skills/*.md files         |
 | Injection      | None             | Two-layer (system + result)|
-| Subagent       | `run_subagent()` | Removed (different focus)  |
 
 ## Design Rationale
 

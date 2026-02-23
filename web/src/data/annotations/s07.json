@@ -30,17 +30,59 @@
       }
     },
     {
-      "id": "task-replaces-todo",
-      "title": "TaskManager Replaces TodoWrite",
-      "description": "TaskManager is the multi-agent evolution of TodoWrite. Same core concept (a list of items with statuses) but with critical additions: file persistence (survives crashes), dependency tracking (blocks/blockedBy), ownership (which agent is working on what), and multi-process safety. TodoWrite was designed for a single agent tracking its own work in memory. TaskManager is designed for a team of agents coordinating through the filesystem. The API is intentionally similar so the conceptual upgrade path is clear.",
-      "alternatives": "Keeping TodoWrite for single-agent use and adding TaskManager only for multi-agent scenarios would avoid breaking the single-agent experience. But maintaining two systems with overlapping functionality increases complexity. TaskManager is a strict superset of TodoWrite -- a single agent using TaskManager just ignores the multi-agent features.",
+      "id": "task-default-todo-coexistence",
+      "title": "Task as Course Default, Todo Still Useful",
+      "description": "TaskManager extends the Todo mental model and becomes the default workflow from s07 onward in this course. This 'default' is a course sequencing choice, not a universal runtime default claim. Both track work items with statuses, but TaskManager adds file persistence (survives crashes), dependency tracking (blocks/blockedBy), ownership fields, and multi-process coordination. Todo remains useful for short, linear, one-shot tracking where heavyweight coordination is unnecessary.",
+      "alternatives": "Using only Todo keeps the model minimal but weak for long-running or collaborative work. Using only Task everywhere maximizes consistency but can feel heavy for tiny one-off tasks. Reminder signals are omission-reduction hints, not implicit mode switches; Task/Todo choice should still come from workflow intent and available tools.",
       "zh": {
-        "title": "TaskManager 取代 TodoWrite",
-        "description": "TaskManager 是 TodoWrite 的多代理进化版。核心概念相同（带状态的项目列表），但增加了关键能力：文件持久化（崩溃后存活）、依赖追踪（blocks/blockedBy）、所有权（哪个 agent 在处理什么）、以及多进程安全。TodoWrite 为单 agent 在内存中追踪自身工作而设计。TaskManager 为代理团队通过文件系统协调而设计。API 刻意保持相似，使概念升级路径清晰。"
+        "title": "Task 为课程主线，Todo 仍有适用场景",
+        "description": "TaskManager 延续了 Todo 的心智模型，并在本课程 s07 之后成为默认主线。两者都管理带状态的任务项，但 TaskManager 增加了文件持久化（崩溃后可恢复）、依赖追踪（blocks/blockedBy）、owner 字段与多进程协作能力。Todo 仍适合短、线性、一次性的轻量跟踪。"
       },
       "ja": {
-        "title": "TaskManager が TodoWrite を置き換え",
-        "description": "TaskManager は TodoWrite のマルチエージェント進化版です。コア概念は同じ（ステータス付きの項目リスト）ですが、重要な追加があります：ファイル永続化（クラッシュ後も存続）、依存関係追跡（blocks/blockedBy）、所有権（どのエージェントが何を担当しているか）、マルチプロセス安全性。TodoWrite は単一エージェントがメモリ内で自身の作業を追跡するために設計されました。TaskManager はエージェントチームがファイルシステムを通じて連携するために設計されています。API は意図的に類似させ、概念的なアップグレードパスを明確にしています。"
+        "title": "Task を主線にしつつ Todo も併存",
+        "description": "TaskManager は Todo のメンタルモデルを拡張し、本コースでは s07 以降のデフォルトになる。どちらもステータス付き作業項目を扱うが、TaskManager にはファイル永続化（クラッシュ耐性）、依存関係追跡（blocks/blockedBy）、owner、マルチプロセス協調がある。Todo は短く直線的な単発作業では引き続き有効。"
+      }
+    },
+    {
+      "id": "task-write-discipline",
+      "title": "Durability Needs Write Discipline",
+      "description": "File persistence reduces context loss, but it does not remove concurrent-write risks by itself. Before writing task state, reload the JSON, validate expected status/dependency fields, and then save atomically. This prevents one agent from silently overwriting another agent's transition.",
+      "alternatives": "Blind overwrite writes are simpler but can corrupt coordination state under parallel execution. A database with optimistic locking would enforce stronger safety, but the course keeps file-based state for zero-dependency teaching.",
+      "zh": {
+        "title": "持久化仍需要写入纪律",
+        "description": "文件持久化能降低上下文丢失，但不会自动消除并发写入风险。写任务状态前应先重读 JSON、校验 `status/blockedBy` 是否符合预期，再原子写回，避免不同 agent 悄悄覆盖彼此状态。"
+      },
+      "ja": {
+        "title": "耐久性には書き込み規律が必要",
+        "description": "ファイル永続化だけでは並行書き込み競合は防げない。更新前に JSON を再読込し、`status/blockedBy` を検証して原子的に保存することで、他エージェントの遷移上書きを防ぐ。"
+      }
+    },
+    {
+      "id": "reminder-advisory-not-switch",
+      "title": "Reminder Is Advisory, Not a Mode Switch",
+      "description": "Reminder signals should be treated as omission-reduction hints, not as control-plane switches. Choosing Task vs Todo should come from workflow intent and currently available tools, while reminders only nudge usage when tracking appears stale.",
+      "alternatives": "Treating reminders as implicit mode selectors looks convenient, but it hides decision boundaries and makes behavior harder to reason about during long sessions.",
+      "zh": {
+        "title": "Reminder 是提示，不是模式开关",
+        "description": "Reminder 信号用于降低遗漏，不应当被当作控制面的模式切换器。Task/Todo 的选择应由工作流意图与可用工具决定，提醒只在追踪滞后时提供轻量提示。"
+      },
+      "ja": {
+        "title": "Reminder は助言でありモード切替ではない",
+        "description": "Reminder は取りこぼしを減らすための助言であり、制御面のモード切替として扱わない。Task/Todo の選択はワークフロー意図と利用可能ツールで決め、Reminder は追跡が滞ったときに軽く促す。"
+      }
+    },
+    {
+      "id": "todo-task-fast-matrix",
+      "title": "Todo/Task Fast Decision Matrix",
+      "description": "Use Todo for short one-session linear checklists. Use Task for cross-session work, dependencies, or teammate coordination. If uncertain, start with Task because downscoping is cheaper than migrating state mid-run.",
+      "alternatives": "Always using Todo keeps the model minimal but breaks durability and collaboration. Always using Task maximizes consistency but may feel heavy for tiny one-shot notes.",
+      "zh": {
+        "title": "Todo/Task 快速判定矩阵",
+        "description": "短时单会话线性清单用 Todo；跨会话、依赖、多人协作用 Task；拿不准时先用 Task，因为后续降级比半途迁移状态更便宜。"
+      },
+      "ja": {
+        "title": "Todo/Task クイック判定マトリクス",
+        "description": "短い単一セッションの直線タスクは Todo、セッション跨ぎや依存・協調がある作業は Task。迷うなら Task 開始が安全で、後で簡略化する方が途中移行より低コスト。"
       }
     }
   ]

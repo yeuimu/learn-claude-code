@@ -1,6 +1,6 @@
 # s02: Tools
 
-> A dispatch map routes tool calls to handler functions -- the loop itself does not change at all.
+> A dispatch map routes tool calls to handler functions. The loop stays identical.
 
 ## The Problem
 
@@ -133,7 +133,7 @@ def agent_loop(messages: list):
 
 ## Design Rationale
 
-The dispatch map pattern scales linearly -- adding a tool means adding one handler and one schema entry. The loop never changes. This separation of concerns (loop vs handlers) is why agent frameworks can support dozens of tools without increasing control flow complexity. The pattern also enables independent testing of each handler in isolation, since handlers are pure functions with no coupling to the loop. Any agent that outgrows a dispatch map has a design problem, not a scaling problem.
+The dispatch map scales linearly: add a tool, add a handler, add a schema entry. The loop never changes. Handlers are pure functions, so they test in isolation. Any agent that outgrows a dispatch map has a design problem, not a scaling problem.
 
 ## Try It
 
