@@ -2,7 +2,7 @@
 
 `s01 > s02 > s03 > s04 > s05 > s06 | s07 > s08 > s09 > s10 > s11 > [ s12 ]`
 
-> *"Isolate by directory, coordinate by task ID"* -- task board + optional worktree lanes.
+> *"Each works in its own directory, no interference"* -- tasks manage goals, worktrees manage directories, bound by ID.
 
 ## Problem
 

@@ -2,7 +2,7 @@
 
 `s01 > [ s02 ] s03 > s04 > s05 > s06 | s07 > s08 > s09 > s10 > s11 > s12`
 
-> *"The loop didn't change"* -- adding tools means adding handlers, not rewriting the loop.
+> *"Adding a tool means adding one handler"* -- the loop stays the same; new tools register into the dispatch map.
 
 ## Problem
 

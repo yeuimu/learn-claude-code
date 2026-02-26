@@ -1,36 +1,52 @@
-# s07: Tasks (任务系统)
+# s07: Task System (任务系统)
 
 `s01 > s02 > s03 > s04 > s05 > s06 | [ s07 ] s08 > s09 > s10 > s11 > s12`
 
-> *"State survives /compact"* -- 写进文件的状态, 压缩也杀不死。
+> *"大目标要拆成小任务, 排好序, 记在磁盘上"* -- 文件持久化的任务图, 为多 agent 协作打基础。
 
 ## 问题
 
-内存里的状态 (s03 的 TodoManager) 扛不住上下文压缩 (s06)。auto_compact 一跑, 消息被摘要替换, todo list 就没了。智能体只能从摘要文本里猜 -- 有损且容易出错。
+s03 的 TodoManager 只是内存中的扁平清单: 没有顺序、没有依赖、状态只有做完没做完。真实目标是有结构的 -- 任务 B 依赖任务 A, 任务 C 和 D 可以并行, 任务 E 要等 C 和 D 都完成。
 
-写到磁盘就不一样了: 文件状态能扛住压缩、进程重启, 后面还能给多个智能体共享 (s09+)。
+没有显式的关系, 智能体分不清什么能做、什么被卡住、什么能同时跑。而且清单只活在内存里, 上下文压缩 (s06) 一跑就没了。
 
 ## 解决方案
 
+把扁平清单升级为持久化到磁盘的**任务图**。每个任务是一个 JSON 文件, 有状态、前置依赖 (`blockedBy`) 和后置依赖 (`blocks`)。任务图随时回答三个问题:
+
+- **什么可以做?** -- 状态为 `pending` 且 `blockedBy` 为空的任务。
+- **什么被卡住?** -- 等待前置任务完成的任务。
+- **什么做完了?** -- 状态为 `completed` 的任务, 完成时自动解锁后续任务。
+
 ```
 .tasks/
-  task_1.json  {"id":1, "status":"completed", ...}
+  task_1.json  {"id":1, "status":"completed"}
   task_2.json  {"id":2, "blockedBy":[1], "status":"pending"}
-  task_3.json  {"id":3, "blockedBy":[2], "status":"pending"}
+  task_3.json  {"id":3, "blockedBy":[1], "status":"pending"}
+  task_4.json  {"id":4, "blockedBy":[2,3], "status":"pending"}
 
-Dependency resolution:
-+----------+     +----------+     +----------+
-| task 1   | --> | task 2   | --> | task 3   |
-| complete |     | blocked  |     | blocked  |
-+----------+     +----------+     +----------+
-     |                ^
-     +--- completing task 1 removes it from
-          task 2's blockedBy list
+任务图 (DAG):
+                 +----------+
+            +--> | task 2   | --+
+            |    | pending  |   |
++----------+     +----------+    +--> +----------+
+| task 1   |                          | task 4   |
+| completed| --> +----------+    +--> | blocked  |
++----------+     | task 3   | --+     +----------+
+                 | pending  |
+                 +----------+
+
+顺序:   task 1 必须先完成, 才能开始 2 和 3
+并行:   task 2 和 3 可以同时执行
+依赖:   task 4 要等 2 和 3 都完成
+状态:   pending -> in_progress -> completed
 ```
+
+这个任务图是 s07 之后所有机制的协调骨架: 后台执行 (s08)、多 agent 团队 (s09+)、worktree 隔离 (s12) 都读写这同一个结构。
 
 ## 工作原理
 
-1. TaskManager: 每个任务一个 JSON 文件, CRUD + 依赖图。
+1. **TaskManager**: 每个任务一个 JSON 文件, CRUD + 依赖图。
 
 ```python
 class TaskManager:
@@ -48,7 +64,7 @@ class TaskManager:
         return json.dumps(task, indent=2)
 ```
 
-2. 完成任务时, 自动将其 ID 从其他任务的 `blockedBy` 中移除。
+2. **依赖解除**: 完成任务时, 自动将其 ID 从其他任务的 `blockedBy` 中移除, 解锁后续任务。
 
 ```python
 def _clear_dependency(self, completed_id):
@@ -59,7 +75,7 @@ def _clear_dependency(self, completed_id):
             self._save(task)
 ```
 
-3. `update` 处理状态变更和依赖关联。
+3. **状态变更 + 依赖关联**: `update` 处理状态转换和依赖边。
 
 ```python
 def update(self, task_id, status=None,
@@ -84,16 +100,17 @@ TOOL_HANDLERS = {
 }
 ```
 
-从 s07 起, Task 是多步工作的默认选择。Todo 仍可用于快速清单。
+从 s07 起, 任务图是多步工作的默认选择。s03 的 Todo 仍可用于单次会话内的快速清单。
 
 ## 相对 s06 的变更
 
 | 组件 | 之前 (s06) | 之后 (s07) |
 |---|---|---|
 | Tools | 5 | 8 (`task_create/update/list/get`) |
-| 状态存储 | 仅内存 | `.tasks/` 中的 JSON 文件 |
-| 依赖关系 | 无 | `blockedBy + blocks` 图 |
-| 持久化 | 压缩后丢失 | 压缩后存活 |
+| 规划模型 | 扁平清单 (仅内存) | 带依赖关系的任务图 (磁盘) |
+| 关系 | 无 | `blockedBy` + `blocks` 边 |
+| 状态追踪 | 做完没做完 | `pending` -> `in_progress` -> `completed` |
+| 持久化 | 压缩后丢失 | 压缩和重启后存活 |
 
 ## 试一试
 
@@ -107,4 +124,4 @@ python agents/s07_task_system.py
 1. `Create 3 tasks: "Setup project", "Write code", "Write tests". Make them depend on each other in order.`
 2. `List all tasks and show the dependency graph`
 3. `Complete task 1 and then list tasks to see task 2 unblocked`
-4. `Create a task board for refactoring: parse -> transform -> emit -> test`
+4. `Create a task board for refactoring: parse -> transform -> emit -> test, where transform and emit can run in parallel after parse`

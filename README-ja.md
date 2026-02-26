@@ -26,27 +26,27 @@
 
 > **s01** &nbsp; *"One loop & Bash is all you need"* &mdash; 1つのツール + 1つのループ = エージェント
 >
-> **s02** &nbsp; *"ループは変わらない"* &mdash; ツール追加はハンドラー追加であり、ループの作り直しではない
+> **s02** &nbsp; *"ツールを足すなら、ハンドラーを1つ足すだけ"* &mdash; ループは変わらない。新ツールは dispatch map に登録するだけ
 >
-> **s03** &nbsp; *"行動する前に計画せよ"* &mdash; 可視化された計画がタスク完了率を向上させる
+> **s03** &nbsp; *"計画のないエージェントは行き当たりばったり"* &mdash; まずステップを書き出し、それから実行
 >
-> **s04** &nbsp; *"プロセス分離 = コンテキスト分離"* &mdash; サブエージェントごとに新しい messages[]
+> **s04** &nbsp; *"大きなタスクを分割し、各サブタスクにクリーンなコンテキストを"* &mdash; サブエージェントは独立した messages[] を使い、メイン会話を汚さない
 >
-> **s05** &nbsp; *"必要な時にロード、事前にではなく"* &mdash; system prompt ではなく tool_result で知識を注入
+> **s05** &nbsp; *"必要な知識を、必要な時に読み込む"* &mdash; system prompt ではなく tool_result で注入
 >
-> **s06** &nbsp; *"戦略的忘却"* &mdash; 古いコンテキストを忘れて無限セッションを実現
+> **s06** &nbsp; *"コンテキストはいつか溢れる、空ける手段が要る"* &mdash; 3層圧縮で無限セッションを実現
 >
-> **s07** &nbsp; *"状態は圧縮を生き延びる"* &mdash; ファイルベースの状態はコンテキスト圧縮に耐える
+> **s07** &nbsp; *"大きな目標を小タスクに分解し、順序付けし、ディスクに記録する"* &mdash; ファイルベースのタスクグラフ、マルチエージェント協調の基盤
 >
-> **s08** &nbsp; *"撃ちっ放し"* &mdash; ノンブロッキングスレッド + 通知キュー
+> **s08** &nbsp; *"遅い操作はバックグラウンドへ、エージェントは次を考え続ける"* &mdash; デーモンスレッドがコマンド実行、完了後に通知を注入
 >
-> **s09** &nbsp; *"追記で送信、排出で読取"* &mdash; 永続チームメイトのための非同期メールボックス
+> **s09** &nbsp; *"一人で終わらないなら、チームメイトに任せる"* &mdash; 永続チームメイト + 非同期メールボックス
 >
-> **s10** &nbsp; *"同じ request_id、2つのプロトコル"* &mdash; 1つの FSM パターンでシャットダウン + プラン承認
+> **s10** &nbsp; *"チームメイト間には統一の通信ルールが必要"* &mdash; 1つの request-response パターンが全交渉を駆動
 >
-> **s11** &nbsp; *"ポーリング、クレーム、作業、繰り返し"* &mdash; コーディネーター不要、エージェントが自己組織化
+> **s11** &nbsp; *"チームメイトが自らボードを見て、仕事を取る"* &mdash; リーダーが逐一割り振る必要はない
 >
-> **s12** &nbsp; *"ディレクトリで分離し、タスクIDで調整する"* &mdash; タスクボード + 必要時の worktree レーン
+> **s12** &nbsp; *"各自のディレクトリで作業し、互いに干渉しない"* &mdash; タスクは目標を管理、worktree はディレクトリを管理、IDで紐付け
 
 ---
 
@@ -167,17 +167,17 @@ learn-claude-code/
 | セッション | トピック | モットー |
 |-----------|---------|---------|
 | [s01](./docs/ja/s01-the-agent-loop.md) | エージェントループ | *One loop & Bash is all you need* |
-| [s02](./docs/ja/s02-tool-use.md) | Tool Use | *ループは変わらない* |
-| [s03](./docs/ja/s03-todo-write.md) | TodoWrite | *行動する前に計画せよ* |
-| [s04](./docs/ja/s04-subagent.md) | サブエージェント | *プロセス分離 = コンテキスト分離* |
-| [s05](./docs/ja/s05-skill-loading.md) | Skills | *必要な時にロード、事前にではなく* |
-| [s06](./docs/ja/s06-context-compact.md) | Context Compact | *戦略的忘却* |
-| [s07](./docs/ja/s07-task-system.md) | タスクシステム | *状態は圧縮を生き延びる* |
-| [s08](./docs/ja/s08-background-tasks.md) | バックグラウンドタスク | *撃ちっ放し* |
-| [s09](./docs/ja/s09-agent-teams.md) | エージェントチーム | *追記で送信、排出で読取* |
-| [s10](./docs/ja/s10-team-protocols.md) | チームプロトコル | *同じ request_id、2つのプロトコル* |
-| [s11](./docs/ja/s11-autonomous-agents.md) | 自律エージェント | *ポーリング、クレーム、作業、繰り返し* |
-| [s12](./docs/ja/s12-worktree-task-isolation.md) | Worktree + タスク分離 | *ディレクトリで分離し、タスクIDで調整する* |
+| [s02](./docs/ja/s02-tool-use.md) | Tool Use | *ツールを足すなら、ハンドラーを1つ足すだけ* |
+| [s03](./docs/ja/s03-todo-write.md) | TodoWrite | *計画のないエージェントは行き当たりばったり* |
+| [s04](./docs/ja/s04-subagent.md) | サブエージェント | *大きなタスクを分割し、各サブタスクにクリーンなコンテキストを* |
+| [s05](./docs/ja/s05-skill-loading.md) | Skills | *必要な知識を、必要な時に読み込む* |
+| [s06](./docs/ja/s06-context-compact.md) | Context Compact | *コンテキストはいつか溢れる、空ける手段が要る* |
+| [s07](./docs/ja/s07-task-system.md) | タスクシステム | *大きな目標を小タスクに分解し、順序付けし、ディスクに記録する* |
+| [s08](./docs/ja/s08-background-tasks.md) | バックグラウンドタスク | *遅い操作はバックグラウンドへ、エージェントは次を考え続ける* |
+| [s09](./docs/ja/s09-agent-teams.md) | エージェントチーム | *一人で終わらないなら、チームメイトに任せる* |
+| [s10](./docs/ja/s10-team-protocols.md) | チームプロトコル | *チームメイト間には統一の通信ルールが必要* |
+| [s11](./docs/ja/s11-autonomous-agents.md) | 自律エージェント | *チームメイトが自らボードを見て、仕事を取る* |
+| [s12](./docs/ja/s12-worktree-task-isolation.md) | Worktree + タスク分離 | *各自のディレクトリで作業し、互いに干渉しない* |
 
 ## 次のステップ -- 理解から出荷へ
 

@@ -2,7 +2,7 @@
 
 `s01 > [ s02 ] s03 > s04 > s05 > s06 | s07 > s08 > s09 > s10 > s11 > s12`
 
-> *"The loop didn't change"* -- 加工具就是加 handler, 不是重写循环。
+> *"加一个工具, 只加一个 handler"* -- 循环不用动, 新工具注册进 dispatch map 就行。
 
 ## 问题
 

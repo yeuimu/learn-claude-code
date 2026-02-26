@@ -26,27 +26,27 @@
 
 > **s01** &nbsp; *"One loop & Bash is all you need"* &mdash; one tool + one loop = an agent
 >
-> **s02** &nbsp; *"The loop didn't change"* &mdash; adding tools means adding handlers, not rewriting the loop
+> **s02** &nbsp; *"Adding a tool means adding one handler"* &mdash; the loop stays the same; new tools register into the dispatch map
 >
-> **s03** &nbsp; *"Plan before you act"* &mdash; visible plans improve task completion
+> **s03** &nbsp; *"An agent without a plan drifts"* &mdash; list the steps first, then execute; completion doubles
 >
-> **s04** &nbsp; *"Process isolation = context isolation"* &mdash; fresh messages[] per subagent
+> **s04** &nbsp; *"Break big tasks down; each subtask gets a clean context"* &mdash; subagents use independent messages[], keeping the main conversation clean
 >
-> **s05** &nbsp; *"Load on demand, not upfront"* &mdash; inject knowledge via tool_result, not system prompt
+> **s05** &nbsp; *"Load knowledge when you need it, not upfront"* &mdash; inject via tool_result, not the system prompt
 >
-> **s06** &nbsp; *"Strategic forgetting"* &mdash; forget old context to enable infinite sessions
+> **s06** &nbsp; *"Context will fill up; you need a way to make room"* &mdash; three-layer compression strategy for infinite sessions
 >
-> **s07** &nbsp; *"State survives /compact"* &mdash; file-based state outlives context compression
+> **s07** &nbsp; *"Break big goals into small tasks, order them, persist to disk"* &mdash; a file-based task graph with dependencies, laying the foundation for multi-agent collaboration
 >
-> **s08** &nbsp; *"Fire and forget"* &mdash; non-blocking threads + notification queue
+> **s08** &nbsp; *"Run slow operations in the background; the agent keeps thinking"* &mdash; daemon threads run commands, inject notifications on completion
 >
-> **s09** &nbsp; *"Append to send, drain to read"* &mdash; async mailboxes for persistent teammates
+> **s09** &nbsp; *"When the task is too big for one, delegate to teammates"* &mdash; persistent teammates + async mailboxes
 >
-> **s10** &nbsp; *"Same request_id, two protocols"* &mdash; one FSM pattern powers shutdown + plan approval
+> **s10** &nbsp; *"Teammates need shared communication rules"* &mdash; one request-response pattern drives all negotiation
 >
-> **s11** &nbsp; *"Poll, claim, work, repeat"* &mdash; no coordinator needed, agents self-organize
+> **s11** &nbsp; *"Teammates scan the board and claim tasks themselves"* &mdash; no need for the lead to assign each one
 >
-> **s12** &nbsp; *"Isolate by directory, coordinate by task ID"* &mdash; task board + optional worktree lanes
+> **s12** &nbsp; *"Each works in its own directory, no interference"* &mdash; tasks manage goals, worktrees manage directories, bound by ID
 
 ---
 
@@ -167,17 +167,17 @@ Available in [English](./docs/en/) | [中文](./docs/zh/) | [日本語](./docs/j
 | Session | Topic | Motto |
 |---------|-------|-------|
 | [s01](./docs/en/s01-the-agent-loop.md) | The Agent Loop | *One loop & Bash is all you need* |
-| [s02](./docs/en/s02-tool-use.md) | Tool Use | *The loop didn't change* |
-| [s03](./docs/en/s03-todo-write.md) | TodoWrite | *Plan before you act* |
-| [s04](./docs/en/s04-subagent.md) | Subagents | *Process isolation = context isolation* |
-| [s05](./docs/en/s05-skill-loading.md) | Skills | *Load on demand, not upfront* |
-| [s06](./docs/en/s06-context-compact.md) | Context Compact | *Strategic forgetting* |
-| [s07](./docs/en/s07-task-system.md) | Tasks | *State survives /compact* |
-| [s08](./docs/en/s08-background-tasks.md) | Background Tasks | *Fire and forget* |
-| [s09](./docs/en/s09-agent-teams.md) | Agent Teams | *Append to send, drain to read* |
-| [s10](./docs/en/s10-team-protocols.md) | Team Protocols | *Same request_id, two protocols* |
-| [s11](./docs/en/s11-autonomous-agents.md) | Autonomous Agents | *Poll, claim, work, repeat* |
-| [s12](./docs/en/s12-worktree-task-isolation.md) | Worktree + Task Isolation | *Isolate by directory, coordinate by task ID* |
+| [s02](./docs/en/s02-tool-use.md) | Tool Use | *Adding a tool means adding one handler* |
+| [s03](./docs/en/s03-todo-write.md) | TodoWrite | *An agent without a plan drifts* |
+| [s04](./docs/en/s04-subagent.md) | Subagents | *Break big tasks down; each subtask gets a clean context* |
+| [s05](./docs/en/s05-skill-loading.md) | Skills | *Load knowledge when you need it, not upfront* |
+| [s06](./docs/en/s06-context-compact.md) | Context Compact | *Context will fill up; you need a way to make room* |
+| [s07](./docs/en/s07-task-system.md) | Tasks | *Break big goals into small tasks, order them, persist to disk* |
+| [s08](./docs/en/s08-background-tasks.md) | Background Tasks | *Run slow operations in the background; the agent keeps thinking* |
+| [s09](./docs/en/s09-agent-teams.md) | Agent Teams | *When the task is too big for one, delegate to teammates* |
+| [s10](./docs/en/s10-team-protocols.md) | Team Protocols | *Teammates need shared communication rules* |
+| [s11](./docs/en/s11-autonomous-agents.md) | Autonomous Agents | *Teammates scan the board and claim tasks themselves* |
+| [s12](./docs/en/s12-worktree-task-isolation.md) | Worktree + Task Isolation | *Each works in its own directory, no interference* |
 
 ## What's Next -- from understanding to shipping
 

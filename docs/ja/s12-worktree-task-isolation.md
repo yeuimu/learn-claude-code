@@ -2,7 +2,7 @@
 
 `s01 > s02 > s03 > s04 > s05 > s06 | s07 > s08 > s09 > s10 > s11 > [ s12 ]`
 
-> *"Isolate by directory, coordinate by task ID"* -- タスクボード + worktreeレーンで並行作業を分離する。
+> *"各自のディレクトリで作業し、互いに干渉しない"* -- タスクは目標を管理、worktree はディレクトリを管理、IDで紐付け。
 
 ## 問題
 

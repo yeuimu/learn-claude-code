@@ -34,7 +34,7 @@
       "id": "s02",
       "filename": "s02_tool_use.py",
       "title": "Tools",
-      "subtitle": "The Loop Didn't Change",
+      "subtitle": "One Handler Per Tool",
       "loc": 115,
       "tools": [
         "bash",
@@ -48,7 +48,7 @@
         "edit_file"
       ],
       "coreAddition": "Tool dispatch map",
-      "keyInsight": "Adding tools means adding handlers, not rewriting the loop",
+      "keyInsight": "The loop stays the same; new tools register into the dispatch map",
       "classes": [],
       "functions": [
         {
@@ -102,7 +102,7 @@
         "todo"
       ],
       "coreAddition": "TodoManager + nag reminder",
-      "keyInsight": "Visible plans improve task completion and accountability",
+      "keyInsight": "An agent without a plan drifts; list the steps first, then execute",
       "classes": [
         {
           "name": "TodoManager",
@@ -149,7 +149,7 @@
       "id": "s04",
       "filename": "s04_subagent.py",
       "title": "Subagents",
-      "subtitle": "Process Isolation = Context Isolation",
+      "subtitle": "Clean Context Per Subtask",
       "loc": 146,
       "tools": [
         "bash",
@@ -162,7 +162,7 @@
         "task"
       ],
       "coreAddition": "Subagent spawn with isolated messages[]",
-      "keyInsight": "Process isolation gives context isolation for free",
+      "keyInsight": "Subagents use independent messages[], keeping the main conversation clean",
       "classes": [],
       "functions": [
         {
@@ -208,7 +208,7 @@
       "id": "s05",
       "filename": "s05_skill_loading.py",
       "title": "Skills",
-      "subtitle": "SKILL.md + tool_result Injection",
+      "subtitle": "Load on Demand",
       "loc": 177,
       "tools": [
         "bash",
@@ -221,7 +221,7 @@
         "load_skill"
       ],
       "coreAddition": "SkillLoader + two-layer injection",
-      "keyInsight": "Skills inject via tool_result, not system prompt",
+      "keyInsight": "Inject knowledge via tool_result when needed, not upfront in the system prompt",
       "classes": [
         {
           "name": "SkillLoader",
@@ -268,7 +268,7 @@
       "id": "s06",
       "filename": "s06_context_compact.py",
       "title": "Compact",
-      "subtitle": "Strategic Forgetting",
+      "subtitle": "Three-Layer Compression",
       "loc": 200,
       "tools": [
         "bash",
@@ -281,7 +281,7 @@
         "compact"
       ],
       "coreAddition": "micro-compact + auto-compact + archival",
-      "keyInsight": "Forgetting old context enables infinite-length sessions",
+      "keyInsight": "Context will fill up; three-layer compression strategy enables infinite sessions",
       "classes": [],
       "functions": [
         {
@@ -337,7 +337,7 @@
       "id": "s07",
       "filename": "s07_task_system.py",
       "title": "Tasks",
-      "subtitle": "Persistent CRUD with Dependencies",
+      "subtitle": "Task Graph + Dependencies",
       "loc": 202,
       "tools": [
         "bash",
@@ -356,7 +356,7 @@
         "task_get"
       ],
       "coreAddition": "TaskManager with file-based state + dependency graph",
-      "keyInsight": "File-based state survives context compression",
+      "keyInsight": "A file-based task graph with ordering, parallelism, and dependencies -- the coordination backbone for multi-agent work",
       "classes": [
         {
           "name": "TaskManager",
@@ -403,7 +403,7 @@
       "id": "s08",
       "filename": "s08_background_tasks.py",
       "title": "Background Tasks",
-      "subtitle": "Fire and Forget",
+      "subtitle": "Background Threads + Notifications",
       "loc": 193,
       "tools": [
         "bash",
@@ -418,7 +418,7 @@
         "check_background"
       ],
       "coreAddition": "BackgroundManager + notification queue",
-      "keyInsight": "Non-blocking daemon threads + notification queue",
+      "keyInsight": "Run slow operations in the background; the agent keeps thinking ahead",
       "classes": [
         {
           "name": "BackgroundManager",
@@ -488,7 +488,7 @@
         "broadcast"
       ],
       "coreAddition": "TeammateManager + file-based mailbox",
-      "keyInsight": "Persistent teammates with async mailbox inboxes",
+      "keyInsight": "When one agent can't finish, delegate to persistent teammates via async mailboxes",
       "classes": [
         {
           "name": "MessageBus",
@@ -540,7 +540,7 @@
       "id": "s10",
       "filename": "s10_team_protocols.py",
       "title": "Team Protocols",
-      "subtitle": "Shutdown + Plan Approval",
+      "subtitle": "Shared Communication Rules",
       "loc": 414,
       "tools": [
         "bash",
@@ -562,7 +562,7 @@
         "shutdown_request"
       ],
       "coreAddition": "request_id correlation for two protocols",
-      "keyInsight": "Same request-response pattern, two applications",
+      "keyInsight": "One request-response pattern drives all team negotiation",
       "classes": [
         {
           "name": "MessageBus",
@@ -629,7 +629,7 @@
       "id": "s11",
       "filename": "s11_autonomous_agents.py",
       "title": "Autonomous Agents",
-      "subtitle": "Idle Cycle + Auto-Claim",
+      "subtitle": "Scan Board, Claim Tasks",
       "loc": 494,
       "tools": [
         "bash",
@@ -652,7 +652,7 @@
         "claim_task"
       ],
       "coreAddition": "Task board polling + timeout-based self-governance",
-      "keyInsight": "Polling + timeout makes teammates self-organizing",
+      "keyInsight": "Teammates scan the board and claim tasks themselves; no need for the lead to assign each one",
       "classes": [
         {
           "name": "MessageBus",
@@ -769,7 +769,7 @@
         "worktree_events"
       ],
       "coreAddition": "Composable worktree lifecycle + event stream over a shared task board",
-      "keyInsight": "Task board coordinates ownership, worktrees isolate execution, and events make lifecycle auditable",
+      "keyInsight": "Each works in its own directory; tasks manage goals, worktrees manage directories, bound by ID",
       "classes": [
         {
           "name": "EventBus",

@@ -2,7 +2,7 @@
 
 `s01 > s02 > s03 > s04 > s05 > s06 | s07 > s08 > [ s09 ] s10 > s11 > s12`
 
-> *"Append to send, drain to read"* -- async mailboxes for persistent teammates.
+> *"When the task is too big for one, delegate to teammates"* -- persistent teammates + async mailboxes.
 
 ## Problem
 

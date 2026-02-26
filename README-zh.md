@@ -26,27 +26,27 @@
 
 > **s01** &nbsp; *"One loop & Bash is all you need"* &mdash; 一个工具 + 一个循环 = 一个智能体
 >
-> **s02** &nbsp; *"循环没有变"* &mdash; 加工具就是加 handler, 不是重写循环
+> **s02** &nbsp; *"加一个工具, 只加一个 handler"* &mdash; 循环不用动, 新工具注册进 dispatch map 就行
 >
-> **s03** &nbsp; *"先计划再行动"* &mdash; 可见的计划提升任务完成率
+> **s03** &nbsp; *"没有计划的 agent 走哪算哪"* &mdash; 先列步骤再动手, 完成率翻倍
 >
-> **s04** &nbsp; *"进程隔离 = 上下文隔离"* &mdash; 每个子智能体独立 messages[]
+> **s04** &nbsp; *"大任务拆小, 每个小任务干净的上下文"* &mdash; 子智能体用独立 messages[], 不污染主对话
 >
-> **s05** &nbsp; *"按需加载, 而非预装"* &mdash; 通过 tool_result 注入知识, 而非塞进 system prompt
+> **s05** &nbsp; *"用到什么知识, 临时加载什么知识"* &mdash; 通过 tool_result 注入, 不塞 system prompt
 >
-> **s06** &nbsp; *"策略性遗忘"* &mdash; 忘掉旧上下文, 换来无限会话
+> **s06** &nbsp; *"上下文总会满, 要有办法腾地方"* &mdash; 三层压缩策略, 换来无限会话
 >
-> **s07** &nbsp; *"状态在压缩后存活"* &mdash; 文件持久化的状态不怕上下文压缩
+> **s07** &nbsp; *"大目标要拆成小任务, 排好序, 记在磁盘上"* &mdash; 文件持久化的任务图, 为多 agent 协作打基础
 >
-> **s08** &nbsp; *"发射后不管"* &mdash; 非阻塞线程 + 通知队列
+> **s08** &nbsp; *"慢操作丢后台, agent 继续想下一步"* &mdash; 后台线程跑命令, 完成后注入通知
 >
-> **s09** &nbsp; *"追加即发送, 排空即读取"* &mdash; 异步邮箱实现持久化队友通信
+> **s09** &nbsp; *"任务太大一个人干不完, 要能分给队友"* &mdash; 持久化队友 + 异步邮箱
 >
-> **s10** &nbsp; *"同一个 request_id, 两个协议"* &mdash; 一个 FSM 模式驱动关机 + 计划审批
+> **s10** &nbsp; *"队友之间要有统一的沟通规矩"* &mdash; 一个 request-response 模式驱动所有协商
 >
-> **s11** &nbsp; *"轮询, 认领, 工作, 重复"* &mdash; 无需协调者, 智能体自组织
+> **s11** &nbsp; *"队友自己看看板, 有活就认领"* &mdash; 不需要领导逐个分配, 自组织
 >
-> **s12** &nbsp; *"目录隔离, 任务 ID 协调"* &mdash; 任务板协调 + 按需 worktree 隔离通道
+> **s12** &nbsp; *"各干各的目录, 互不干扰"* &mdash; 任务管目标, worktree 管目录, 按 ID 绑定
 
 ---
 
@@ -167,17 +167,17 @@ learn-claude-code/
 | 课程 | 主题 | 格言 |
 |------|------|------|
 | [s01](./docs/zh/s01-the-agent-loop.md) | Agent 循环 | *One loop & Bash is all you need* |
-| [s02](./docs/zh/s02-tool-use.md) | Tool Use | *循环没有变* |
-| [s03](./docs/zh/s03-todo-write.md) | TodoWrite | *先计划再行动* |
-| [s04](./docs/zh/s04-subagent.md) | 子智能体 | *进程隔离 = 上下文隔离* |
-| [s05](./docs/zh/s05-skill-loading.md) | Skills | *按需加载, 而非预装* |
-| [s06](./docs/zh/s06-context-compact.md) | Context Compact | *策略性遗忘* |
-| [s07](./docs/zh/s07-task-system.md) | 任务系统 | *状态在压缩后存活* |
-| [s08](./docs/zh/s08-background-tasks.md) | 后台任务 | *发射后不管* |
-| [s09](./docs/zh/s09-agent-teams.md) | 智能体团队 | *追加即发送, 排空即读取* |
-| [s10](./docs/zh/s10-team-protocols.md) | 团队协议 | *同一个 request_id, 两个协议* |
-| [s11](./docs/zh/s11-autonomous-agents.md) | 自治智能体 | *轮询, 认领, 工作, 重复* |
-| [s12](./docs/zh/s12-worktree-task-isolation.md) | Worktree + 任务隔离 | *目录隔离, 任务 ID 协调* |
+| [s02](./docs/zh/s02-tool-use.md) | Tool Use | *加一个工具, 只加一个 handler* |
+| [s03](./docs/zh/s03-todo-write.md) | TodoWrite | *没有计划的 agent 走哪算哪* |
+| [s04](./docs/zh/s04-subagent.md) | 子智能体 | *大任务拆小, 每个小任务干净的上下文* |
+| [s05](./docs/zh/s05-skill-loading.md) | Skills | *用到什么知识, 临时加载什么知识* |
+| [s06](./docs/zh/s06-context-compact.md) | Context Compact | *上下文总会满, 要有办法腾地方* |
+| [s07](./docs/zh/s07-task-system.md) | 任务系统 | *大目标要拆成小任务, 排好序, 记在磁盘上* |
+| [s08](./docs/zh/s08-background-tasks.md) | 后台任务 | *慢操作丢后台, agent 继续想下一步* |
+| [s09](./docs/zh/s09-agent-teams.md) | 智能体团队 | *任务太大一个人干不完, 要能分给队友* |
+| [s10](./docs/zh/s10-team-protocols.md) | 团队协议 | *队友之间要有统一的沟通规矩* |
+| [s11](./docs/zh/s11-autonomous-agents.md) | 自治智能体 | *队友自己看看板, 有活就认领* |
+| [s12](./docs/zh/s12-worktree-task-isolation.md) | Worktree + 任务隔离 | *各干各的目录, 互不干扰* |
 
 ## 学完之后 -- 从理解到落地
 

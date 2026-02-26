@@ -2,7 +2,7 @@
 
 `s01 > s02 > s03 > [ s04 ] s05 > s06 | s07 > s08 > s09 > s10 > s11 > s12`
 
-> *"Process isolation = context isolation"* -- 每个子智能体拿到一个干净的 messages[]。
+> *"大任务拆小, 每个小任务干净的上下文"* -- 子智能体用独立 messages[], 不污染主对话。
 
 ## 问题
 

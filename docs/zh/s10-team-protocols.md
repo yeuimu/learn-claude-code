@@ -2,7 +2,7 @@
 
 `s01 > s02 > s03 > s04 > s05 > s06 | s07 > s08 > s09 > [ s10 ] s11 > s12`
 
-> *"Same request_id, two protocols"* -- 一个 FSM 模式, 同时驱动关机和计划审批。
+> *"队友之间要有统一的沟通规矩"* -- 一个 request-response 模式驱动所有协商。
 
 ## 问题
 

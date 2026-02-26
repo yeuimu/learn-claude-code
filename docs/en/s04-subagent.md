@@ -2,7 +2,7 @@
 
 `s01 > s02 > s03 > [ s04 ] s05 > s06 | s07 > s08 > s09 > s10 > s11 > s12`
 
-> *"Process isolation = context isolation"* -- fresh messages[] per subagent.
+> *"Break big tasks down; each subtask gets a clean context"* -- subagents use independent messages[], keeping the main conversation clean.
 
 ## Problem
 

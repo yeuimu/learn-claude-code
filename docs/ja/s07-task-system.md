@@ -1,36 +1,52 @@
-# s07: Tasks
+# s07: Task System
 
 `s01 > s02 > s03 > s04 > s05 > s06 | [ s07 ] s08 > s09 > s10 > s11 > s12`
 
-> *"State survives /compact"* -- ファイルベースの状態はコンテキスト圧縮を生き延びる。
+> *"大きな目標を小タスクに分解し、順序付けし、ディスクに記録する"* -- ファイルベースのタスクグラフ、マルチエージェント協調の基盤。
 
 ## 問題
 
-インメモリ状態(s03のTodoManager)はコンテキスト圧縮(s06)で消える。auto_compactがメッセージを要約に置換した後、todoリストは失われる。要約テキストからの復元は不正確で脆い。
+s03のTodoManagerはメモリ上のフラットなチェックリストに過ぎない: 順序なし、依存関係なし、ステータスは完了か未完了のみ。実際の目標には構造がある -- タスクBはタスクAに依存し、タスクCとDは並行実行でき、タスクEはCとDの両方を待つ。
 
-ファイルベースのタスクがこれを解決する: 状態をディスクに書き込めば、圧縮もプロセス再起動も生き延び、やがてマルチエージェントでの共有(s09+)も可能になる。
+明示的な関係がなければ、エージェントは何が実行可能で、何がブロックされ、何が同時に走れるかを判断できない。しかもリストはメモリ上にしかないため、コンテキスト圧縮(s06)で消える。
 
 ## 解決策
 
+フラットなチェックリストをディスクに永続化する**タスクグラフ**に昇格させる。各タスクは1つのJSONファイルで、ステータス・前方依存(`blockedBy`)・後方依存(`blocks`)を持つ。タスクグラフは常に3つの問いに答える:
+
+- **何が実行可能か?** -- `pending`ステータスで`blockedBy`が空のタスク。
+- **何がブロックされているか?** -- 未完了の依存を待つタスク。
+- **何が完了したか?** -- `completed`のタスク。完了時に後続タスクを自動的にアンブロックする。
+
 ```
 .tasks/
-  task_1.json  {"id":1, "status":"completed", ...}
+  task_1.json  {"id":1, "status":"completed"}
   task_2.json  {"id":2, "blockedBy":[1], "status":"pending"}
-  task_3.json  {"id":3, "blockedBy":[2], "status":"pending"}
+  task_3.json  {"id":3, "blockedBy":[1], "status":"pending"}
+  task_4.json  {"id":4, "blockedBy":[2,3], "status":"pending"}
 
-Dependency resolution:
-+----------+     +----------+     +----------+
-| task 1   | --> | task 2   | --> | task 3   |
-| complete |     | blocked  |     | blocked  |
-+----------+     +----------+     +----------+
-     |                ^
-     +--- completing task 1 removes it from
-          task 2's blockedBy list
+タスクグラフ (DAG):
+                 +----------+
+            +--> | task 2   | --+
+            |    | pending  |   |
++----------+     +----------+    +--> +----------+
+| task 1   |                          | task 4   |
+| completed| --> +----------+    +--> | blocked  |
++----------+     | task 3   | --+     +----------+
+                 | pending  |
+                 +----------+
+
+順序:       task 1 は 2 と 3 より先に完了する必要がある
+並行:       task 2 と 3 は同時に実行できる
+依存:       task 4 は 2 と 3 の両方を待つ
+ステータス: pending -> in_progress -> completed
 ```
+
+このタスクグラフは s07 以降の全メカニズムの協調バックボーンとなる: バックグラウンド実行(s08)、マルチエージェントチーム(s09+)、worktree分離(s12)はすべてこの同じ構造を読み書きする。
 
 ## 仕組み
 
-1. TaskManager: タスクごとに1つのJSONファイル、依存グラフ付きCRUD。
+1. **TaskManager**: タスクごとに1つのJSONファイル、依存グラフ付きCRUD。
 
 ```python
 class TaskManager:
@@ -48,7 +64,7 @@ class TaskManager:
         return json.dumps(task, indent=2)
 ```
 
-2. タスク完了時に、他タスクの`blockedBy`リストから完了IDを除去する。
+2. **依存解除**: タスク完了時に、他タスクの`blockedBy`リストから完了IDを除去し、後続タスクをアンブロックする。
 
 ```python
 def _clear_dependency(self, completed_id):
@@ -59,7 +75,7 @@ def _clear_dependency(self, completed_id):
             self._save(task)
 ```
 
-3. `update`が状態遷移と依存配線を担う。
+3. **ステータス遷移 + 依存配線**: `update`がステータス変更と依存エッジを担う。
 
 ```python
 def update(self, task_id, status=None,
@@ -84,16 +100,17 @@ TOOL_HANDLERS = {
 }
 ```
 
-s07以降、Taskがマルチステップ作業のデフォルト。Todoは軽量チェックリスト用に残る。
+s07以降、タスクグラフがマルチステップ作業のデフォルト。s03のTodoは軽量な単一セッション用チェックリストとして残る。
 
 ## s06からの変更点
 
-| Component | Before (s06) | After (s07) |
+| コンポーネント | Before (s06) | After (s07) |
 |---|---|---|
 | Tools | 5 | 8 (`task_create/update/list/get`) |
-| State storage | In-memory only | JSON files in `.tasks/` |
-| Dependencies | None | `blockedBy + blocks` graph |
-| Persistence | Lost on compact | Survives compression |
+| 計画モデル | フラットチェックリスト (メモリ) | 依存関係付きタスクグラフ (ディスク) |
+| 関係 | なし | `blockedBy` + `blocks` エッジ |
+| ステータス追跡 | 完了か未完了 | `pending` -> `in_progress` -> `completed` |
+| 永続性 | 圧縮で消失 | 圧縮・再起動後も存続 |
 
 ## 試してみる
 
@@ -105,4 +122,4 @@ python agents/s07_task_system.py
 1. `Create 3 tasks: "Setup project", "Write code", "Write tests". Make them depend on each other in order.`
 2. `List all tasks and show the dependency graph`
 3. `Complete task 1 and then list tasks to see task 2 unblocked`
-4. `Create a task board for refactoring: parse -> transform -> emit -> test`
+4. `Create a task board for refactoring: parse -> transform -> emit -> test, where transform and emit can run in parallel after parse`
