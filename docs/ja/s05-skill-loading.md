@@ -1,14 +1,12 @@
 # s05: Skills
 
-> 2層のスキル注入により、スキル名をシステムプロンプトに(低コスト)、スキル本体をtool_resultに(オンデマンド)配置することで、システムプロンプトの肥大化を回避する。
+`s01 > s02 > s03 > s04 > [ s05 ] s06 | s07 > s08 > s09 > s10 > s11 > s12`
+
+> *"Load on demand, not upfront"* -- 知識はsystem promptではなくtool_result経由で注入する。
 
 ## 問題
 
-エージェントに特定のドメインのワークフローを遵守させたい: gitの規約、テストパターン、コードレビューのチェックリストなど。単純なアプローチはすべてをシステムプロンプトに入れることだ。しかしシステムプロンプトの実効的な注意力は有限であり、テキストが多すぎるとモデルはその一部を無視し始める。
-
-10個のスキルが各2000トークンあれば、20,000トークンのシステムプロンプトになる。モデルは先頭と末尾に注意を払い、中間部分は飛ばし読みする。さらに悪いことに、ほとんどのスキルは任意のタスクに対して無関係だ。ファイル編集のタスクにgitワークフローの指示は不要だ。
-
-2層アプローチがこれを解決する: 第1層はシステムプロンプトにスキルの短い説明を置く(スキルあたり約100トークン)。第2層はモデルが`load_skill`を呼び出した時だけ、スキル本体の全文をtool_resultに読み込む。モデルはどのスキルが存在するかを知り(低コスト)、必要な時だけ読み込む(関連する時のみ)。
+エージェントにドメイン固有のワークフローを遵守させたい: gitの規約、テストパターン、コードレビューチェックリスト。すべてをシステムプロンプトに入れると、使われないスキルにトークンを浪費する。10スキル x 2000トークン = 20,000トークン、ほとんどが任意のタスクに無関係だ。
 
 ## 解決策
 
@@ -27,10 +25,11 @@ When model calls load_skill("git"):
 | <skill name="git">                   |
 |   Full git workflow instructions...  |  ~2000 tokens
 |   Step 1: ...                        |
-|   Step 2: ...                        |
 | </skill>                             |
 +--------------------------------------+
 ```
+
+第1層: スキル*名*をシステムプロンプトに(低コスト)。第2層: スキル*本体*をtool_resultに(オンデマンド)。
 
 ## 仕組み
 
@@ -46,68 +45,12 @@ When model calls load_skill("git"):
 
 ```python
 class SkillLoader:
-    def _parse_frontmatter(self, text: str) -> tuple:
-        match = re.match(
-            r"^---\n(.*?)\n---\n(.*)", text, re.DOTALL
-        )
-        if not match:
-            return {}, text
-        meta = {}
-        for line in match.group(1).strip().splitlines():
-            if ":" in line:
-                key, val = line.split(":", 1)
-                meta[key.strip()] = val.strip()
-        return meta, match.group(2).strip()
-```
-
-3. 第1層: `get_descriptions()`がシステムプロンプト用の短い行を返す。
-
-```python
-def get_descriptions(self) -> str:
-    lines = []
-    for name, skill in self.skills.items():
-        desc = skill["meta"].get("description", "No description")
-        lines.append(f"  - {name}: {desc}")
-    return "\n".join(lines)
-
-SYSTEM = f"""You are a coding agent at {WORKDIR}.
-Skills available:
-{SKILL_LOADER.get_descriptions()}"""
-```
-
-4. 第2層: `get_content()`が`<skill>`タグで囲まれた本体全文を返す。
-
-```python
-def get_content(self, name: str) -> str:
-    skill = self.skills.get(name)
-    if not skill:
-        return f"Error: Unknown skill '{name}'."
-    return f"<skill name=\"{name}\">\n{skill['body']}\n</skill>"
-```
-
-5. `load_skill`ツールはディスパッチマップの単なる一エントリだ。
-
-```python
-TOOL_HANDLERS = {
-    # ...base tools...
-    "load_skill": lambda **kw: SKILL_LOADER.get_content(kw["name"]),
-}
-```
-
-## 主要コード
-
-SkillLoaderクラス(`agents/s05_skill_loading.py` 51-97行目):
-
-```python
-class SkillLoader:
     def __init__(self, skills_dir: Path):
         self.skills = {}
         for f in sorted(skills_dir.glob("*.md")):
             text = f.read_text()
             meta, body = self._parse_frontmatter(text)
-            self.skills[f.stem] = {
-                "meta": meta, "body": body
-            }
+            self.skills[f.stem] = {"meta": meta, "body": body}
 
     def get_descriptions(self) -> str:
         lines = []
@@ -120,9 +63,23 @@ class SkillLoader:
         skill = self.skills.get(name)
         if not skill:
             return f"Error: Unknown skill '{name}'."
-        return (f"<skill name=\"{name}\">\n"
-                f"{skill['body']}\n</skill>")
+        return f"<skill name=\"{name}\">\n{skill['body']}\n</skill>"
 ```
+
+3. 第1層はシステムプロンプトに配置。第2層は通常のツールハンドラ。
+
+```python
+SYSTEM = f"""You are a coding agent at {WORKDIR}.
+Skills available:
+{SKILL_LOADER.get_descriptions()}"""
+
+TOOL_HANDLERS = {
+    # ...base tools...
+    "load_skill": lambda **kw: SKILL_LOADER.get_content(kw["name"]),
+}
+```
+
+モデルはどのスキルが存在するかを知り(低コスト)、関連する時にだけ読み込む(高コスト)。
 
 ## s04からの変更点
 
@@ -133,18 +90,12 @@ class SkillLoader:
 | Knowledge      | None             | .skills/*.md files         |
 | Injection      | None             | Two-layer (system + result)|
 
-## 設計原理
-
-2層注入は注意力バジェットの問題を解決する。すべてのスキル内容をシステムプロンプトに入れると、未使用のスキルにトークンを浪費する。第1層(コンパクトな要約)は合計約120トークンのコストだ。第2層(完全な内容)はtool_resultを通じてオンデマンドで読み込まれる。これにより、モデルの注意力品質を劣化させることなく数十のスキルにスケールできる。重要な洞察は、モデルはどのスキルが存在するか(低コスト)を知るだけで、いつスキルを読み込むか(高コスト)を判断できるということだ。これはソフトウェアモジュールシステムで使われる遅延読み込みと同じ原理だ。
-
 ## 試してみる
 
 ```sh
 cd learn-claude-code
 python agents/s05_skill_loading.py
 ```
-
-試せるプロンプト例:
 
 1. `What skills are available?`
 2. `Load the agent-builder skill and follow its instructions`

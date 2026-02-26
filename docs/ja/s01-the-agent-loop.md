@@ -1,40 +1,37 @@
 # s01: The Agent Loop
 
-> AIコーディングエージェントの中核は、モデルが「終了」と判断するまでツール結果をモデルにフィードバックし続ける while ループにある。
+`[ s01 ] s02 > s03 > s04 > s05 > s06 | s07 > s08 > s09 > s10 > s11 > s12`
+
+> *"One loop & Bash is all you need"* -- 1つのツール + 1つのループ = エージェント。
 
 ## 問題
 
-なぜ言語モデルは単体でコーディングの質問に答えられないのか。それはコーディングが「現実世界とのインタラクション」を必要とするからだ。モデルはファイルを読み、テストを実行し、エラーを確認し、反復する必要がある。一回のプロンプト-レスポンスのやり取りではこれは実現できない。
-
-agent loopがなければ、ユーザーが自分でモデルの出力をコピーペーストして戻す必要がある。つまりユーザー自身がループの役割を果たすことになる。agent loopはこれを自動化する: モデルを呼び出し、モデルが要求したツールを実行し、結果をフィードバックし、モデルが「完了」と言うまで繰り返す。
-
-単純なタスクを考えてみよう: 「helloと出力するPythonファイルを作成せよ」。モデルは(1)ファイルを書くことを決定し、(2)書き、(3)動作を検証する必要がある。最低でも3回のツール呼び出しが必要だ。ループがなければ、そのたびに手動の介入が必要になる。
+言語モデルはコードについて推論できるが、現実世界に触れられない。ファイルを読めず、テストを実行できず、エラーを確認できない。ループがなければ、ツール呼び出しのたびにユーザーが手動で結果をコピーペーストする必要がある。つまりユーザー自身がループになる。
 
 ## 解決策
 
 ```
-+----------+      +-------+      +---------+
-|   User   | ---> |  LLM  | ---> |  Tool   |
-|  prompt  |      |       |      | execute |
-+----------+      +---+---+      +----+----+
-                      ^               |
-                      |   tool_result |
-                      +---------------+
-                      (loop continues)
-
-The loop terminates when stop_reason != "tool_use".
-That single condition is the entire control flow.
++--------+      +-------+      +---------+
+|  User  | ---> |  LLM  | ---> |  Tool   |
+| prompt |      |       |      | execute |
++--------+      +---+---+      +----+----+
+                    ^                |
+                    |   tool_result  |
+                    +----------------+
+                    (loop until stop_reason != "tool_use")
 ```
+
+1つの終了条件がフロー全体を制御する。モデルがツール呼び出しを止めるまでループが回り続ける。
 
 ## 仕組み
 
-1. ユーザーがプロンプトを入力する。これが最初のメッセージになる。
+1. ユーザーのプロンプトが最初のメッセージになる。
 
 ```python
-history.append({"role": "user", "content": query})
+messages.append({"role": "user", "content": query})
 ```
 
-2. メッセージ配列がツール定義と共にLLMに送信される。
+2. メッセージとツール定義をLLMに送信する。
 
 ```python
 response = client.messages.create(
@@ -43,22 +40,18 @@ response = client.messages.create(
 )
 ```
 
-3. アシスタントのレスポンスがメッセージに追加される。
+3. アシスタントのレスポンスを追加し、`stop_reason`を確認する。ツールが呼ばれなければ終了。
 
 ```python
 messages.append({"role": "assistant", "content": response.content})
-```
-
-4. stop reasonを確認する。モデルがツールを呼び出さなかった場合、ループは終了する。この最小実装では、これが唯一のループ終了条件だ。
-
-```python
 if response.stop_reason != "tool_use":
     return
 ```
 
-5. レスポンス中の各tool_useブロックについて、ツール(このセッションではbash)を実行し、結果を収集する。
+4. 各ツール呼び出しを実行し、結果を収集してuserメッセージとして追加。ステップ2に戻る。
 
 ```python
+results = []
 for block in response.content:
     if block.type == "tool_use":
         output = run_bash(block.input["command"])
@@ -67,29 +60,24 @@ for block in response.content:
             "tool_use_id": block.id,
             "content": output,
         })
-```
-
-6. 結果がuserメッセージとして追加され、ループが続行する。
-
-```python
 messages.append({"role": "user", "content": results})
 ```
 
-## 主要コード
-
-最小限のエージェント -- パターン全体が30行未満
-(`agents/s01_agent_loop.py` 66-86行目):
+1つの関数にまとめると:
 
 ```python
-def agent_loop(messages: list):
+def agent_loop(query):
+    messages = [{"role": "user", "content": query}]
     while True:
         response = client.messages.create(
             model=MODEL, system=SYSTEM, messages=messages,
             tools=TOOLS, max_tokens=8000,
         )
         messages.append({"role": "assistant", "content": response.content})
+
         if response.stop_reason != "tool_use":
             return
+
         results = []
         for block in response.content:
             if block.type == "tool_use":
@@ -102,9 +90,9 @@ def agent_loop(messages: list):
         messages.append({"role": "user", "content": results})
 ```
 
-## 変更点
+これでエージェント全体が30行未満に収まる。本コースの残りはすべてこのループの上に積み重なる -- ループ自体は変わらない。
 
-これはセッション1 -- 出発点である。前のセッションは存在しない。
+## 変更点
 
 | Component     | Before     | After                          |
 |---------------|------------|--------------------------------|
@@ -113,18 +101,12 @@ def agent_loop(messages: list):
 | Messages      | (none)     | Accumulating list              |
 | Control flow  | (none)     | `stop_reason != "tool_use"`    |
 
-## 設計原理
-
-このループは LLM ベースエージェントの土台だ。本番実装ではエラーハンドリング、トークン計測、ストリーミング、リトライに加え、権限ポリシーやライフサイクル編成が追加されるが、コアの相互作用パターンはここから始まる。シンプルさこそこの章の狙いであり、この最小実装では 1 つの終了条件(`stop_reason != "tool_use"`)で学習に必要な制御を示す。本コースの他の要素はこのループに積み重なる。つまり、このループの理解は基礎であって、本番アーキテクチャ全体そのものではない。
-
 ## 試してみる
 
 ```sh
 cd learn-claude-code
 python agents/s01_agent_loop.py
 ```
-
-試せるプロンプト例:
 
 1. `Create a file called hello.py that prints "Hello, World!"`
 2. `List all Python files in this directory`

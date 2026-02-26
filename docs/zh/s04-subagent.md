@@ -1,14 +1,12 @@
-# s04: Subagent (子智能体)
+# s04: Subagents (子智能体)
 
-> 子智能体使用全新的消息列表运行, 与父智能体共享文件系统, 仅返回摘要 -- 保持父上下文的整洁。
+`s01 > s02 > s03 > [ s04 ] s05 > s06 | s07 > s08 > s09 > s10 > s11 > s12`
+
+> *"Process isolation = context isolation"* -- 每个子智能体拿到一个干净的 messages[]。
 
 ## 问题
 
-随着智能体工作, 它的消息数组不断增长。每次工具调用、每次文件读取、每次 bash 输出都在累积。20-30 次工具调用后, 上下文窗口充满了无关的历史。为了回答一个简单问题而读取的 500 行文件, 会永久占据上下文中的 500 行空间。
-
-这对探索性任务尤其糟糕。"这个项目用了什么测试框架?" 可能需要读取 5 个文件, 但父智能体的历史中并不需要这 5 个文件的全部内容 -- 它只需要答案: "pytest, 使用 conftest.py 配置。"
-
-在本课程里, 一个实用解法是 fresh `messages[]` 隔离: 以 `messages=[]` 启动一个子智能体。子智能体进行探索、读取文件、运行命令。完成后, 只有最终的文本响应返回给父智能体。子智能体的全部消息历史被丢弃。
+智能体工作越久, messages 数组越胖。每次读文件、跑命令的输出都永久留在上下文里。"这个项目用什么测试框架?" 可能要读 5 个文件, 但父智能体只需要一个词: "pytest。"
 
 ## 解决方案
 
@@ -17,19 +15,18 @@ Parent agent                     Subagent
 +------------------+             +------------------+
 | messages=[...]   |             | messages=[]      | <-- fresh
 |                  |  dispatch   |                  |
-| tool: task       | ---------->| while tool_use:  |
-|   prompt="..."   |            |   call tools     |
-|                  |  summary   |   append results |
-|   result = "..." | <--------- | return last text |
+| tool: task       | ----------> | while tool_use:  |
+|   prompt="..."   |             |   call tools     |
+|                  |  summary    |   append results |
+|   result = "..." | <---------- | return last text |
 +------------------+             +------------------+
-          |
-Parent context stays clean.
-Subagent context is discarded.
+
+Parent context stays clean. Subagent context is discarded.
 ```
 
 ## 工作原理
 
-1. 父智能体拥有一个 `task` 工具用于触发子智能体的生成。子智能体获得除 `task` 外的所有基础工具 (不允许递归生成)。
+1. 父智能体有一个 `task` 工具。子智能体拥有除 `task` 外的所有基础工具 (禁止递归生成)。
 
 ```python
 PARENT_TOOLS = CHILD_TOOLS + [
@@ -37,62 +34,18 @@ PARENT_TOOLS = CHILD_TOOLS + [
      "description": "Spawn a subagent with fresh context.",
      "input_schema": {
          "type": "object",
-         "properties": {
-             "prompt": {"type": "string"},
-             "description": {"type": "string"},
-         },
+         "properties": {"prompt": {"type": "string"}},
          "required": ["prompt"],
      }},
 ]
 ```
 
-2. 子智能体以全新的消息列表启动, 仅包含委派的 prompt。它共享相同的文件系统。
+2. 子智能体以 `messages=[]` 启动, 运行自己的循环。只有最终文本返回给父智能体。
 
 ```python
 def run_subagent(prompt: str) -> str:
     sub_messages = [{"role": "user", "content": prompt}]
     for _ in range(30):  # safety limit
-        response = client.messages.create(
-            model=MODEL, system=SUBAGENT_SYSTEM,
-            messages=sub_messages,
-            tools=CHILD_TOOLS, max_tokens=8000,
-        )
-        sub_messages.append({
-            "role": "assistant", "content": response.content
-        })
-        if response.stop_reason != "tool_use":
-            break
-        # execute tools, append results...
-```
-
-3. 只有最终文本返回给父智能体。子智能体 30+ 次工具调用的历史被丢弃。
-
-```python
-    return "".join(
-        b.text for b in response.content if hasattr(b, "text")
-    ) or "(no summary)"
-```
-
-4. 父智能体将此摘要作为普通的 tool_result 接收。
-
-```python
-if block.name == "task":
-    output = run_subagent(block.input["prompt"])
-results.append({
-    "type": "tool_result",
-    "tool_use_id": block.id,
-    "content": str(output),
-})
-```
-
-## 核心代码
-
-子智能体函数 (来自 `agents/s04_subagent.py`, 第 110-128 行):
-
-```python
-def run_subagent(prompt: str) -> str:
-    sub_messages = [{"role": "user", "content": prompt}]
-    for _ in range(30):
         response = client.messages.create(
             model=MODEL, system=SUBAGENT_SYSTEM,
             messages=sub_messages,
@@ -116,18 +69,16 @@ def run_subagent(prompt: str) -> str:
     ) or "(no summary)"
 ```
 
+子智能体可能跑了 30+ 次工具调用, 但整个消息历史直接丢弃。父智能体收到的只是一段摘要文本, 作为普通 `tool_result` 返回。
+
 ## 相对 s03 的变更
 
 | 组件           | 之前 (s03)       | 之后 (s04)                    |
-|----------------|------------------|---------------------------|
-| Tools          | 5                | 5 (基础) + task (仅父端)  |
-| 上下文         | 单一共享         | 父 + 子隔离               |
-| Subagent       | 无               | `run_subagent()` 函数     |
-| 返回值         | 不适用           | 仅摘要文本                |
-
-## 设计原理
-
-在本节中, fresh `messages[]` 隔离是一个近似实现上下文隔离的实用办法。全新的 `messages[]` 意味着子智能体从不携带父级历史开始。代价是通信开销 -- 结果必须压缩回父级, 丢失细节。这是消息历史隔离策略, 不是操作系统进程隔离本身。限制子智能体深度 (不允许递归生成) 防止无限资源消耗, 最大迭代次数确保失控的子任务能终止。
+|----------------|------------------|-------------------------------|
+| Tools          | 5                | 5 (基础) + task (仅父端)      |
+| 上下文         | 单一共享         | 父 + 子隔离                   |
+| Subagent       | 无               | `run_subagent()` 函数         |
+| 返回值         | 不适用           | 仅摘要文本                    |
 
 ## 试一试
 
@@ -136,7 +87,7 @@ cd learn-claude-code
 python agents/s04_subagent.py
 ```
 
-可以尝试的提示:
+试试这些 prompt (英文 prompt 对 LLM 效果更好, 也可以用中文):
 
 1. `Use a subtask to find what testing framework this project uses`
 2. `Delegate: read all .py files and summarize what each one does`

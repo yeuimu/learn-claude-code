@@ -1,30 +1,16 @@
-# s06: Compact
+# s06: Context Compact
 
-> A three-layer compression pipeline lets the agent work indefinitely by strategically forgetting old tool results, auto-summarizing when tokens exceed a threshold, and allowing manual compression on demand.
+`s01 > s02 > s03 > s04 > s05 > [ s06 ] | s07 > s08 > s09 > s10 > s11 > s12`
 
-## The Problem
+> *"Strategic forgetting"* -- forget old context to enable infinite sessions.
 
-The context window is finite. After enough tool calls, the messages array
-exceeds the model's context limit and the API call fails. Even before
-hitting the hard limit, performance degrades: the model becomes slower,
-less accurate, and starts ignoring earlier messages.
+## Problem
 
-A 200,000 token context window sounds large, but a single `read_file` on
-a 1000-line source file consumes ~4000 tokens. After reading 30 files and
-running 20 bash commands, you are at 100,000+ tokens. The agent cannot
-work on large codebases without some form of compression.
+The context window is finite. A single `read_file` on a 1000-line file costs ~4000 tokens. After reading 30 files and running 20 bash commands, you hit 100,000+ tokens. The agent cannot work on large codebases without compression.
 
-The three-layer pipeline addresses this with increasing aggressiveness:
-Layer 1 (micro-compact) silently replaces old tool results every turn.
-Layer 2 (auto-compact) triggers a full summarization when tokens exceed
-a threshold. Layer 3 (manual compact) lets the model trigger compression
-itself.
+## Solution
 
-Teaching simplification: the token estimation here uses a rough
-characters/4 heuristic. Production systems use proper tokenizer
-libraries for accurate counts.
-
-## The Solution
+Three layers, increasing in aggressiveness:
 
 ```
 Every turn:
@@ -56,8 +42,7 @@ continue    [Layer 2: auto_compact]
 
 ## How It Works
 
-1. **Layer 1 -- micro_compact**: Before each LLM call, find all
-   tool_result entries older than the last 3 and replace their content.
+1. **Layer 1 -- micro_compact**: Before each LLM call, replace old tool results with placeholders.
 
 ```python
 def micro_compact(messages: list) -> list:
@@ -69,25 +54,22 @@ def micro_compact(messages: list) -> list:
                     tool_results.append((i, j, part))
     if len(tool_results) <= KEEP_RECENT:
         return messages
-    to_clear = tool_results[:-KEEP_RECENT]
-    for _, _, part in to_clear:
+    for _, _, part in tool_results[:-KEEP_RECENT]:
         if len(part.get("content", "")) > 100:
-            tool_id = part.get("tool_use_id", "")
-            tool_name = tool_name_map.get(tool_id, "unknown")
             part["content"] = f"[Previous: used {tool_name}]"
     return messages
 ```
 
-2. **Layer 2 -- auto_compact**: When estimated tokens exceed 50,000,
-   save the full transcript and ask the LLM to summarize.
+2. **Layer 2 -- auto_compact**: When tokens exceed threshold, save full transcript to disk, then ask the LLM to summarize.
 
 ```python
 def auto_compact(messages: list) -> list:
-    TRANSCRIPT_DIR.mkdir(exist_ok=True)
+    # Save transcript for recovery
     transcript_path = TRANSCRIPT_DIR / f"transcript_{int(time.time())}.jsonl"
     with open(transcript_path, "w") as f:
         for msg in messages:
             f.write(json.dumps(msg, default=str) + "\n")
+    # LLM summarizes
     response = client.messages.create(
         model=MODEL,
         messages=[{"role": "user", "content":
@@ -95,62 +77,29 @@ def auto_compact(messages: list) -> list:
             + json.dumps(messages, default=str)[:80000]}],
         max_tokens=2000,
     )
-    summary = response.content[0].text
     return [
-        {"role": "user", "content": f"[Compressed]\n\n{summary}"},
+        {"role": "user", "content": f"[Compressed]\n\n{response.content[0].text}"},
         {"role": "assistant", "content": "Understood. Continuing."},
     ]
 ```
 
-3. **Layer 3 -- manual compact**: The `compact` tool triggers the same
-   summarization on demand.
+3. **Layer 3 -- manual compact**: The `compact` tool triggers the same summarization on demand.
 
-```python
-if manual_compact:
-    messages[:] = auto_compact(messages)
-```
-
-4. The agent loop integrates all three layers.
+4. The loop integrates all three:
 
 ```python
 def agent_loop(messages: list):
     while True:
-        micro_compact(messages)
+        micro_compact(messages)                        # Layer 1
         if estimate_tokens(messages) > THRESHOLD:
-            messages[:] = auto_compact(messages)
+            messages[:] = auto_compact(messages)       # Layer 2
         response = client.messages.create(...)
         # ... tool execution ...
         if manual_compact:
-            messages[:] = auto_compact(messages)
+            messages[:] = auto_compact(messages)       # Layer 3
 ```
 
-## Key Code
-
-The three-layer pipeline (from `agents/s06_context_compact.py`,
-lines 67-93 and 189-223):
-
-```python
-THRESHOLD = 50000
-KEEP_RECENT = 3
-
-def micro_compact(messages):
-    # Replace old tool results with placeholders
-    ...
-
-def auto_compact(messages):
-    # Save transcript, LLM summarize, replace messages
-    ...
-
-def agent_loop(messages):
-    while True:
-        micro_compact(messages)          # Layer 1
-        if estimate_tokens(messages) > THRESHOLD:
-            messages[:] = auto_compact(messages)  # Layer 2
-        response = client.messages.create(...)
-        # ...
-        if manual_compact:
-            messages[:] = auto_compact(messages)  # Layer 3
-```
+Transcripts preserve full history on disk. Nothing is truly lost -- just moved out of active context.
 
 ## What Changed From s05
 
@@ -160,12 +109,7 @@ def agent_loop(messages):
 | Context mgmt   | None             | Three-layer compression    |
 | Micro-compact  | None             | Old results -> placeholders|
 | Auto-compact   | None             | Token threshold trigger    |
-| Manual compact | None             | `compact` tool             |
 | Transcripts    | None             | Saved to .transcripts/     |
-
-## Design Rationale
-
-Context windows are finite, but agent sessions can be infinite. Three compression layers solve this at different granularities: micro-compact (replace old tool outputs), auto-compact (LLM summarizes when approaching limit), and manual compact (user-triggered). The key insight is that forgetting is a feature, not a bug -- it enables unbounded sessions. Transcripts preserve the full history on disk so nothing is truly lost, just moved out of the active context. The layered approach lets each layer operate independently at its own granularity, from silent per-turn cleanup to full conversation reset.
 
 ## Try It
 
@@ -174,9 +118,6 @@ cd learn-claude-code
 python agents/s06_context_compact.py
 ```
 
-Example prompts to try:
-
-1. `Read every Python file in the agents/ directory one by one`
-   (watch micro-compact replace old results)
+1. `Read every Python file in the agents/ directory one by one` (watch micro-compact replace old results)
 2. `Keep reading files until compression triggers automatically`
 3. `Use the compact tool to manually compress the conversation`

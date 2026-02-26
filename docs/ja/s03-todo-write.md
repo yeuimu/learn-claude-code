@@ -1,60 +1,49 @@
 # s03: TodoWrite
 
-> TodoManagerによりエージェントが自身の進捗を追跡でき、nagリマインダーの注入により更新を忘れた場合に強制的に更新させる。
+`s01 > s02 > [ s03 ] s04 > s05 > s06 | s07 > s08 > s09 > s10 > s11 > s12`
+
+> *"Plan before you act"* -- 可視化された計画がタスク完了率を向上させる。
 
 ## 問題
 
-エージェントがマルチステップのタスクに取り組むとき、何を完了し何が残っているかを見失うことが多い。明示的な計画がなければ、モデルは作業を繰り返したり、ステップを飛ばしたり、脱線したりする可能性がある。ユーザーにはエージェントの内部計画が見えない。
-
-これは見た目以上に深刻だ。長い会話ではモデルが「ドリフト」する -- コンテキストウィンドウがツール結果で埋まるにつれ、システムプロンプトの影響力が薄れていく。10ステップのリファクタリングタスクでステップ1-3を完了した後、モデルはステップ4-10の存在を忘れて即興で行動し始めるかもしれない。
-
-解決策は構造化された状態管理だ: モデルが明示的に書き込むTodoManager。モデルは計画を作成し、作業中のアイテムをin_progressとしてマークし、完了時にcompletedとマークする。nagリマインダーは、モデルが3ラウンド以上todoを更新しなかった場合にナッジを注入する。
-
-注: nag 閾値 3 ラウンドは可視化のために低く設定。本番ではより高い値に調整される。s07 以降は永続的なマルチステップ作業に Task ボードを使用。TodoWrite は軽量チェックリストとして引き続き利用可能。
+マルチステップのタスクで、モデルは途中で迷子になる。作業を繰り返したり、ステップを飛ばしたり、脱線したりする。長い会話になるほど悪化する -- ツール結果がコンテキストを埋めるにつれ、システムプロンプトの影響力が薄れる。10ステップのリファクタリングでステップ1-3を完了した後、残りを忘れて即興を始めてしまう。
 
 ## 解決策
 
 ```
-+----------+      +-------+      +---------+
-|   User   | ---> |  LLM  | ---> | Tools   |
-|  prompt  |      |       |      | + todo  |
-+----------+      +---+---+      +----+----+
-                      ^               |
-                      |   tool_result |
-                      +---------------+
-                            |
-                +-----------+-----------+
-                | TodoManager state     |
-                | [ ] task A            |
-                | [>] task B  <- doing  |
-                | [x] task C            |
-                +-----------------------+
-                            |
-                if rounds_since_todo >= 3:
-                  inject <reminder> into tool_result
++--------+      +-------+      +---------+
+|  User  | ---> |  LLM  | ---> | Tools   |
+| prompt |      |       |      | + todo  |
++--------+      +---+---+      +----+----+
+                    ^                |
+                    |   tool_result  |
+                    +----------------+
+                          |
+              +-----------+-----------+
+              | TodoManager state     |
+              | [ ] task A            |
+              | [>] task B  <- doing  |
+              | [x] task C            |
+              +-----------------------+
+                          |
+              if rounds_since_todo >= 3:
+                inject <reminder> into tool_result
 ```
 
 ## 仕組み
 
-1. TodoManagerはアイテムのリストをバリデーションして保持する。`in_progress`にできるのは一度に1つだけ。
+1. TodoManagerはアイテムのリストをステータス付きで保持する。`in_progress`にできるのは同時に1つだけ。
 
 ```python
 class TodoManager:
-    def __init__(self):
-        self.items = []
-
     def update(self, items: list) -> str:
-        validated = []
-        in_progress_count = 0
+        validated, in_progress_count = [], 0
         for item in items:
             status = item.get("status", "pending")
             if status == "in_progress":
                 in_progress_count += 1
-            validated.append({
-                "id": item["id"],
-                "text": item["text"],
-                "status": status,
-            })
+            validated.append({"id": item["id"], "text": item["text"],
+                              "status": status})
         if in_progress_count > 1:
             raise ValueError("Only one task can be in_progress")
         self.items = validated
@@ -65,82 +54,33 @@ class TodoManager:
 
 ```python
 TOOL_HANDLERS = {
-    "bash":  lambda **kw: run_bash(kw["command"]),
-    # ...other tools...
-    "todo":  lambda **kw: TODO.update(kw["items"]),
+    # ...base tools...
+    "todo": lambda **kw: TODO.update(kw["items"]),
 }
 ```
 
-3. nagリマインダーは、モデルが3ラウンド以上`todo`を呼び出さなかった場合にtool_resultメッセージに`<reminder>`タグを注入する。
+3. nagリマインダーが、モデルが3ラウンド以上`todo`を呼ばなかった場合にナッジを注入する。
 
 ```python
-def agent_loop(messages: list):
-    rounds_since_todo = 0
-    while True:
-        if rounds_since_todo >= 3 and messages:
-            last = messages[-1]
-            if (last["role"] == "user"
-                    and isinstance(last.get("content"), list)):
-                last["content"].insert(0, {
-                    "type": "text",
-                    "text": "<reminder>Update your todos.</reminder>",
-                })
-        # ... rest of loop ...
-        rounds_since_todo = 0 if used_todo else rounds_since_todo + 1
+if rounds_since_todo >= 3 and messages:
+    last = messages[-1]
+    if last["role"] == "user" and isinstance(last.get("content"), list):
+        last["content"].insert(0, {
+            "type": "text",
+            "text": "<reminder>Update your todos.</reminder>",
+        })
 ```
 
-4. システムプロンプトがモデルにtodoによる計画を指示する。
-
-```python
-SYSTEM = f"""You are a coding agent at {WORKDIR}.
-Use the todo tool to plan multi-step tasks.
-Mark in_progress before starting, completed when done.
-Prefer tools over prose."""
-```
-
-## 主要コード
-
-TodoManagerとnag注入(`agents/s03_todo_write.py` 51-85行目および158-187行目):
-
-```python
-class TodoManager:
-    def update(self, items: list) -> str:
-        validated = []
-        in_progress_count = 0
-        for item in items:
-            status = item.get("status", "pending")
-            if status == "in_progress":
-                in_progress_count += 1
-            validated.append({
-                "id": item["id"],
-                "text": item["text"],
-                "status": status,
-            })
-        if in_progress_count > 1:
-            raise ValueError("Only one in_progress")
-        self.items = validated
-        return self.render()
-
-# In agent_loop:
-if rounds_since_todo >= 3:
-    last["content"].insert(0, {
-        "type": "text",
-        "text": "<reminder>Update your todos.</reminder>",
-    })
-```
+「一度にin_progressは1つだけ」の制約が逐次的な集中を強制し、nagリマインダーが説明責任を生む。
 
 ## s02からの変更点
 
-| Component      | Before (s02)     | After (s03)              |
-|----------------|------------------|--------------------------|
-| Tools          | 4                | 5 (+todo)                |
-| Planning       | None             | TodoManager with statuses|
+| Component      | Before (s02)     | After (s03)                |
+|----------------|------------------|----------------------------|
+| Tools          | 4                | 5 (+todo)                  |
+| Planning       | None             | TodoManager with statuses  |
 | Nag injection  | None             | `<reminder>` after 3 rounds|
 | Agent loop     | Simple dispatch  | + rounds_since_todo counter|
-
-## 設計原理
-
-可視化された計画はタスク完了率を向上させる。モデルが自身の進捗を自己監視できるからだ。nagメカニズムはアカウンタビリティを生み出す -- これがなければ、会話コンテキストが増大し初期の指示が薄れるにつれ、モデルは実行途中で計画を放棄する可能性がある。「一度にin_progressは1つだけ」という制約は逐次的な集中を強制し、出力品質を低下させるコンテキストスイッチのオーバーヘッドを防ぐ。このパターンが機能するのは、モデルのワーキングメモリを注意力のドリフトに耐える構造化された状態に外部化するからだ。
 
 ## 試してみる
 
@@ -148,8 +88,6 @@ if rounds_since_todo >= 3:
 cd learn-claude-code
 python agents/s03_todo_write.py
 ```
-
-試せるプロンプト例:
 
 1. `Refactor the file hello.py: add type hints, docstrings, and a main guard`
 2. `Create a Python package with __init__.py, utils.py, and tests/test_utils.py`

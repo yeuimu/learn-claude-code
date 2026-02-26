@@ -1,16 +1,18 @@
 # s10: Team Protocols
 
-> 同じrequest_idハンドシェイクパターンがシャットダウンとプラン承認の両方を支える -- 1つのFSM、2つの適用。
+`s01 > s02 > s03 > s04 > s05 > s06 | s07 > s08 > s09 > [ s10 ] s11 > s12`
+
+> *"Same request_id, two protocols"* -- 1つのFSMパターンがシャットダウンとプラン承認の両方を支える。
 
 ## 問題
 
-s09ではチームメイトが作業しコミュニケーションするが、構造化された協調はない。2つの問題が生じる:
+s09ではチームメイトが作業し通信するが、構造化された協調がない:
 
-**シャットダウン**: チームメイトをどうやってクリーンに停止するか。スレッドを強制終了するとファイルが中途半端に書かれ、config.jsonが不正な状態になる。グレースフルシャットダウンにはハンドシェイクが必要だ: リーダーが要求し、チームメイトが承認(終了処理を行い退出)するか拒否(作業を継続)するかを判断する。
+**シャットダウン**: スレッドを強制終了するとファイルが中途半端に書かれ、config.jsonが不正な状態になる。ハンドシェイクが必要 -- リーダーが要求し、チームメイトが承認(完了して退出)か拒否(作業継続)する。
 
-**プラン承認**: 実行をどうやってゲーティングするか。リーダーが「認証モジュールをリファクタリングして」と言うと、チームメイトは即座に開始する。リスクの高い変更では、実行開始前にリーダーが計画をレビューすべきだ。ジュニアが提案し、シニアが承認する。
+**プラン承認**: リーダーが「認証モジュールをリファクタリングして」と言うと、チームメイトは即座に開始する。リスクの高い変更では、実行前にリーダーが計画をレビューすべきだ。
 
-両方の問題は同じ構造を共有している: 一方がユニークなIDを持つリクエストを送り、もう一方がそのIDを参照してレスポンスする。有限状態機械が各リクエストをpending -> approved | rejectedの遷移で追跡する。
+両方とも同じ構造: 一方がユニークIDを持つリクエストを送り、他方がそのIDで応答する。
 
 ## 解決策
 
@@ -26,12 +28,8 @@ Lead             Teammate    Teammate           Lead
   |<--shutdown_resp-|           |<--plan_resp-----|
   | {req_id:"abc",  |           | {req_id:"xyz",  |
   |  approve:true}  |           |  approve:true}  |
-  |                 |           |                 |
-  v                 v           v                 v
-tracker["abc"]     exits     proceeds          tracker["xyz"]
- = approved                                     = approved
 
-Shared FSM (identical for both protocols):
+Shared FSM:
   [pending] --approve--> [approved]
   [pending] --reject---> [rejected]
 
@@ -42,122 +40,45 @@ Trackers:
 
 ## 仕組み
 
-1. リーダーがrequest_idを生成し、インボックス経由でshutdown_requestを送信してシャットダウンを開始する。
+1. リーダーがrequest_idを生成し、インボックス経由でシャットダウンを開始する。
 
 ```python
 shutdown_requests = {}
 
 def handle_shutdown_request(teammate: str) -> str:
     req_id = str(uuid.uuid4())[:8]
-    shutdown_requests[req_id] = {
-        "target": teammate, "status": "pending",
-    }
+    shutdown_requests[req_id] = {"target": teammate, "status": "pending"}
     BUS.send("lead", teammate, "Please shut down gracefully.",
              "shutdown_request", {"request_id": req_id})
     return f"Shutdown request {req_id} sent (status: pending)"
 ```
 
-2. チームメイトはインボックスでリクエストを受信し、`shutdown_response`ツールを呼び出して承認または拒否する。
+2. チームメイトがリクエストを受信し、承認または拒否で応答する。
 
 ```python
 if tool_name == "shutdown_response":
     req_id = args["request_id"]
     approve = args["approve"]
-    if req_id in shutdown_requests:
-        shutdown_requests[req_id]["status"] = \
-            "approved" if approve else "rejected"
+    shutdown_requests[req_id]["status"] = "approved" if approve else "rejected"
     BUS.send(sender, "lead", args.get("reason", ""),
              "shutdown_response",
              {"request_id": req_id, "approve": approve})
-    return f"Shutdown {'approved' if approve else 'rejected'}"
 ```
 
-3. チームメイトのループが承認済みシャットダウンを確認して終了する。
-
-```python
-if (block.name == "shutdown_response"
-        and block.input.get("approve")):
-    should_exit = True
-# ...
-member["status"] = "shutdown" if should_exit else "idle"
-```
-
-4. プラン承認も同一のパターンに従う。チームメイトがプランを提出し、request_idを生成する。
+3. プラン承認も同一パターン。チームメイトがプランを提出(request_idを生成)、リーダーがレビュー(同じrequest_idを参照)。
 
 ```python
 plan_requests = {}
 
-if tool_name == "plan_approval":
-    plan_text = args.get("plan", "")
-    req_id = str(uuid.uuid4())[:8]
-    plan_requests[req_id] = {
-        "from": sender, "plan": plan_text,
-        "status": "pending",
-    }
-    BUS.send(sender, "lead", plan_text,
-             "plan_approval_request",
-             {"request_id": req_id, "plan": plan_text})
-    return f"Plan submitted (request_id={req_id})"
-```
-
-5. リーダーがレビューし、同じrequest_idでレスポンスする。
-
-```python
-def handle_plan_review(request_id, approve, feedback=""):
-    req = plan_requests.get(request_id)
-    if not req:
-        return f"Error: Unknown request_id '{request_id}'"
-    req["status"] = "approved" if approve else "rejected"
-    BUS.send("lead", req["from"], feedback,
-             "plan_approval_response",
-             {"request_id": request_id,
-              "approve": approve,
-              "feedback": feedback})
-    return f"Plan {req['status']} for '{req['from']}'"
-```
-
-6. 両プロトコルとも同じ`plan_approval`ツール名を2つのモードで使用する: チームメイトが提出(request_idなし)、リーダーがレビュー(request_idあり)。
-
-```python
-# Lead tool dispatch:
-"plan_approval": lambda **kw: handle_plan_review(
-    kw["request_id"], kw["approve"],
-    kw.get("feedback", "")),
-# Teammate: submit mode (generate request_id)
-```
-
-## 主要コード
-
-2つのプロトコルハンドラ(`agents/s10_team_protocols.py`):
-
-```python
-shutdown_requests = {}
-plan_requests = {}
-
-# -- Shutdown --
-def handle_shutdown_request(teammate):
-    req_id = str(uuid.uuid4())[:8]
-    shutdown_requests[req_id] = {
-        "target": teammate, "status": "pending"
-    }
-    BUS.send("lead", teammate,
-             "Please shut down gracefully.",
-             "shutdown_request",
-             {"request_id": req_id})
-
-# -- Plan Approval --
 def handle_plan_review(request_id, approve, feedback=""):
     req = plan_requests[request_id]
     req["status"] = "approved" if approve else "rejected"
     BUS.send("lead", req["from"], feedback,
              "plan_approval_response",
-             {"request_id": request_id,
-              "approve": approve})
-
-# Both use the same FSM:
-# pending -> approved | rejected
-# Both correlate by request_id across async inboxes
+             {"request_id": request_id, "approve": approve})
 ```
+
+1つのFSM、2つの応用。同じ`pending -> approved | rejected`状態機械が、あらゆるリクエスト-レスポンスプロトコルに適用できる。
 
 ## s09からの変更点
 
@@ -166,13 +87,8 @@ def handle_plan_review(request_id, approve, feedback=""):
 | Tools          | 9                | 12 (+shutdown_req/resp +plan)|
 | Shutdown       | Natural exit only| Request-response handshake   |
 | Plan gating    | None             | Submit/review with approval  |
-| Request tracking| None            | Two tracker dicts            |
 | Correlation    | None             | request_id per request       |
 | FSM            | None             | pending -> approved/rejected |
-
-## 設計原理
-
-request_id相関パターンは、任意の非同期インタラクションを追跡可能な有限状態マシンに変換する。同じ3状態マシン(pending -> approved/rejected)がシャットダウン、プラン承認、または将来の任意のプロトコルに適用される。1つのパターンが複数のプロトコルを処理できるのはこのためだ -- FSMは何を承認しているかを気にしない。request_idはメッセージが順不同で到着する可能性のある非同期インボックス間で相関を提供し、エージェント間のタイミング差異に対してパターンを堅牢にする。
 
 ## 試してみる
 
@@ -180,8 +96,6 @@ request_id相関パターンは、任意の非同期インタラクションを�
 cd learn-claude-code
 python agents/s10_team_protocols.py
 ```
-
-試せるプロンプト例:
 
 1. `Spawn alice as a coder. Then request her shutdown.`
 2. `List teammates to see alice's status after shutdown approval`

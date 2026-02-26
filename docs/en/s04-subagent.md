@@ -1,45 +1,32 @@
 # s04: Subagents
 
-> A subagent runs with a fresh messages list, shares the filesystem with the parent, and returns only a summary -- keeping the parent context clean.
+`s01 > s02 > s03 > [ s04 ] s05 > s06 | s07 > s08 > s09 > s10 > s11 > s12`
 
-## The Problem
+> *"Process isolation = context isolation"* -- fresh messages[] per subagent.
 
-As the agent works, its messages array grows. Every tool call, every file
-read, every bash output accumulates. After 20-30 tool calls, the context
-window is crowded with irrelevant history. Reading a 500-line file to
-answer a quick question permanently adds 500 lines to the context.
+## Problem
 
-This is particularly bad for exploratory tasks. "What testing framework
-does this project use?" might require reading 5 files, but the parent
-agent does not need all 5 file contents in its history -- it just needs
-the answer: "pytest with conftest.py configuration."
+As the agent works, its messages array grows. Every file read, every bash output stays in context permanently. "What testing framework does this project use?" might require reading 5 files, but the parent only needs the answer: "pytest."
 
-In this course, a practical solution is fresh-context isolation: spawn a child agent with `messages=[]`.
-The child explores, reads files, runs commands. When it finishes, only its
-final text response returns to the parent. The child's entire message
-history is discarded.
-
-## The Solution
+## Solution
 
 ```
 Parent agent                     Subagent
 +------------------+             +------------------+
 | messages=[...]   |             | messages=[]      | <-- fresh
 |                  |  dispatch   |                  |
-| tool: task       | ---------->| while tool_use:  |
-|   prompt="..."   |            |   call tools     |
-|                  |  summary   |   append results |
-|   result = "..." | <--------- | return last text |
+| tool: task       | ----------> | while tool_use:  |
+|   prompt="..."   |             |   call tools     |
+|                  |  summary    |   append results |
+|   result = "..." | <---------- | return last text |
 +------------------+             +------------------+
-          |
-Parent context stays clean.
-Subagent context is discarded.
+
+Parent context stays clean. Subagent context is discarded.
 ```
 
 ## How It Works
 
-1. The parent agent gets a `task` tool that triggers subagent spawning.
-   The child gets all base tools except `task` (no recursive spawning).
+1. The parent gets a `task` tool. The child gets all base tools except `task` (no recursive spawning).
 
 ```python
 PARENT_TOOLS = CHILD_TOOLS + [
@@ -47,65 +34,18 @@ PARENT_TOOLS = CHILD_TOOLS + [
      "description": "Spawn a subagent with fresh context.",
      "input_schema": {
          "type": "object",
-         "properties": {
-             "prompt": {"type": "string"},
-             "description": {"type": "string"},
-         },
+         "properties": {"prompt": {"type": "string"}},
          "required": ["prompt"],
      }},
 ]
 ```
 
-2. The subagent starts with a fresh messages list containing only
-   the delegated prompt. It shares the same filesystem.
+2. The subagent starts with `messages=[]` and runs its own loop. Only the final text returns to the parent.
 
 ```python
 def run_subagent(prompt: str) -> str:
     sub_messages = [{"role": "user", "content": prompt}]
     for _ in range(30):  # safety limit
-        response = client.messages.create(
-            model=MODEL, system=SUBAGENT_SYSTEM,
-            messages=sub_messages,
-            tools=CHILD_TOOLS, max_tokens=8000,
-        )
-        sub_messages.append({
-            "role": "assistant", "content": response.content
-        })
-        if response.stop_reason != "tool_use":
-            break
-        # execute tools, append results...
-```
-
-3. Only the final text returns to the parent. The child's 30+ tool
-   call history is discarded.
-
-```python
-    return "".join(
-        b.text for b in response.content if hasattr(b, "text")
-    ) or "(no summary)"
-```
-
-4. The parent receives this summary as a normal tool_result.
-
-```python
-if block.name == "task":
-    output = run_subagent(block.input["prompt"])
-results.append({
-    "type": "tool_result",
-    "tool_use_id": block.id,
-    "content": str(output),
-})
-```
-
-## Key Code
-
-The subagent function (from `agents/s04_subagent.py`,
-lines 110-128):
-
-```python
-def run_subagent(prompt: str) -> str:
-    sub_messages = [{"role": "user", "content": prompt}]
-    for _ in range(30):
         response = client.messages.create(
             model=MODEL, system=SUBAGENT_SYSTEM,
             messages=sub_messages,
@@ -129,6 +69,8 @@ def run_subagent(prompt: str) -> str:
     ) or "(no summary)"
 ```
 
+The child's entire message history (possibly 30+ tool calls) is discarded. The parent receives a one-paragraph summary as a normal `tool_result`.
+
 ## What Changed From s03
 
 | Component      | Before (s03)     | After (s04)               |
@@ -138,18 +80,12 @@ def run_subagent(prompt: str) -> str:
 | Subagent       | None             | `run_subagent()` function |
 | Return value   | N/A              | Summary text only         |
 
-## Design Rationale
-
-Fresh-context isolation is a practical way to approximate context isolation in this session. A fresh `messages[]` means the subagent starts without the parent's conversation history. The tradeoff is communication overhead -- results must be compressed back to the parent, losing detail. This is a message-history isolation strategy, not OS process isolation. Limiting subagent depth (no recursive spawning) prevents unbounded resource consumption, and a max iteration count ensures runaway children terminate.
-
 ## Try It
 
 ```sh
 cd learn-claude-code
 python agents/s04_subagent.py
 ```
-
-Example prompts to try:
 
 1. `Use a subtask to find what testing framework this project uses`
 2. `Delegate: read all .py files and summarize what each one does`

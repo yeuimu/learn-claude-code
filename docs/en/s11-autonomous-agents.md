@@ -1,28 +1,18 @@
 # s11: Autonomous Agents
 
-> An idle cycle with task board polling lets teammates find and claim work themselves, with identity re-injection after context compression.
+`s01 > s02 > s03 > s04 > s05 > s06 | s07 > s08 > s09 > s10 > [ s11 ] s12`
 
-## The Problem
+> *"Poll, claim, work, repeat"* -- no coordinator needed, agents self-organize.
 
-In s09-s10, teammates only work when explicitly told to. The lead must
-spawn each teammate with a specific prompt. If the task board has 10
-unclaimed tasks, the lead must manually assign each one. This does not
-scale.
+## Problem
 
-True autonomy means teammates find work themselves. When a teammate
-finishes its current task, it should scan the task board for unclaimed
-work, claim a task, and start working -- without any instruction from
-the lead.
+In s09-s10, teammates only work when explicitly told to. The lead must spawn each one with a specific prompt. 10 unclaimed tasks on the board? The lead assigns each one manually. Doesn't scale.
 
-But autonomous agents face a subtlety: after context compression, the
-agent might forget who it is. If the messages are summarized, the
-original system prompt identity ("you are alice, role: coder") fades.
-Identity re-injection solves this by inserting an identity block at the
-start of compressed contexts.
+True autonomy: teammates scan the task board themselves, claim unclaimed tasks, work on them, then look for more.
 
-Note: token estimation here uses characters/4 (rough). The nag threshold of 3 rounds is low for teaching visibility.
+One subtlety: after context compression (s06), the agent might forget who it is. Identity re-injection fixes this.
 
-## The Solution
+## Solution
 
 ```
 Teammate lifecycle with idle cycle:
@@ -36,8 +26,7 @@ Teammate lifecycle with idle cycle:
 | WORK  | <------------- |  LLM  |
 +---+---+                +-------+
     |
-    | stop_reason != tool_use
-    | (or idle tool called)
+    | stop_reason != tool_use (or idle tool called)
     v
 +--------+
 |  IDLE  |  poll every 5s for up to 60s
@@ -52,14 +41,11 @@ Teammate lifecycle with idle cycle:
 Identity re-injection after compression:
   if len(messages) <= 3:
     messages.insert(0, identity_block)
-    "You are 'alice', role: coder, team: my-team"
 ```
 
 ## How It Works
 
-1. The teammate loop has two phases: WORK and IDLE. WORK runs the
-   standard agent loop. When the LLM stops calling tools (or calls
-   the `idle` tool), the teammate enters the IDLE phase.
+1. The teammate loop has two phases: WORK and IDLE. When the LLM stops calling tools (or calls `idle`), the teammate enters IDLE.
 
 ```python
 def _loop(self, name, role, prompt):
@@ -67,12 +53,6 @@ def _loop(self, name, role, prompt):
         # -- WORK PHASE --
         messages = [{"role": "user", "content": prompt}]
         for _ in range(50):
-            inbox = BUS.read_inbox(name)
-            for msg in inbox:
-                if msg.get("type") == "shutdown_request":
-                    self._set_status(name, "shutdown")
-                    return
-                messages.append(...)
             response = client.messages.create(...)
             if response.stop_reason != "tool_use":
                 break
@@ -89,36 +69,31 @@ def _loop(self, name, role, prompt):
         self._set_status(name, "working")
 ```
 
-2. The idle phase polls the inbox and task board in a loop.
+2. The idle phase polls inbox and task board in a loop.
 
 ```python
 def _idle_poll(self, name, messages):
-    polls = IDLE_TIMEOUT // POLL_INTERVAL  # 60s / 5s = 12
-    for _ in range(polls):
+    for _ in range(IDLE_TIMEOUT // POLL_INTERVAL):  # 60s / 5s = 12
         time.sleep(POLL_INTERVAL)
-        # Check inbox for new messages
         inbox = BUS.read_inbox(name)
         if inbox:
             messages.append({"role": "user",
                 "content": f"<inbox>{inbox}</inbox>"})
             return True
-        # Scan task board for unclaimed tasks
         unclaimed = scan_unclaimed_tasks()
         if unclaimed:
-            task = unclaimed[0]
-            claim_task(task["id"], name)
+            claim_task(unclaimed[0]["id"], name)
             messages.append({"role": "user",
-                "content": f"<auto-claimed>Task #{task['id']}: "
-                           f"{task['subject']}</auto-claimed>"})
+                "content": f"<auto-claimed>Task #{unclaimed[0]['id']}: "
+                           f"{unclaimed[0]['subject']}</auto-claimed>"})
             return True
     return False  # timeout -> shutdown
 ```
 
-3. Task board scanning looks for pending, unowned, unblocked tasks.
+3. Task board scanning: find pending, unowned, unblocked tasks.
 
 ```python
 def scan_unclaimed_tasks() -> list:
-    TASKS_DIR.mkdir(exist_ok=True)
     unclaimed = []
     for f in sorted(TASKS_DIR.glob("task_*.json")):
         task = json.loads(f.read_text())
@@ -127,75 +102,17 @@ def scan_unclaimed_tasks() -> list:
                 and not task.get("blockedBy")):
             unclaimed.append(task)
     return unclaimed
-
-def claim_task(task_id: int, owner: str):
-    path = TASKS_DIR / f"task_{task_id}.json"
-    task = json.loads(path.read_text())
-    task["status"] = "in_progress"
-    task["owner"] = owner
-    path.write_text(json.dumps(task, indent=2))
 ```
 
-4. Identity re-injection inserts an identity block when the context
-   is too short, indicating compression has occurred.
+4. Identity re-injection: when context is too short (compression happened), insert an identity block.
 
 ```python
-def make_identity_block(name, role, team_name):
-    return {"role": "user",
-            "content": f"<identity>You are '{name}', "
-                       f"role: {role}, team: {team_name}. "
-                       f"Continue your work.</identity>"}
-
-# Before resuming work after idle:
 if len(messages) <= 3:
-    messages.insert(0, make_identity_block(
-        name, role, team_name))
+    messages.insert(0, {"role": "user",
+        "content": f"<identity>You are '{name}', role: {role}, "
+                   f"team: {team_name}. Continue your work.</identity>"})
     messages.insert(1, {"role": "assistant",
         "content": f"I am {name}. Continuing."})
-```
-
-5. The `idle` tool lets the teammate explicitly signal it has no more
-   work, entering the idle polling phase early.
-
-```python
-{"name": "idle",
- "description": "Signal that you have no more work. "
-                "Enters idle polling phase.",
- "input_schema": {"type": "object", "properties": {}}},
-```
-
-## Key Code
-
-The autonomous loop (from `agents/s11_autonomous_agents.py`):
-
-```python
-def _loop(self, name, role, prompt):
-    while True:
-        # WORK PHASE
-        for _ in range(50):
-            response = client.messages.create(...)
-            if response.stop_reason != "tool_use":
-                break
-            for block in response.content:
-                if block.name == "idle":
-                    idle_requested = True
-            if idle_requested:
-                break
-
-        # IDLE PHASE
-        self._set_status(name, "idle")
-        for _ in range(IDLE_TIMEOUT // POLL_INTERVAL):
-            time.sleep(POLL_INTERVAL)
-            inbox = BUS.read_inbox(name)
-            if inbox: resume = True; break
-            unclaimed = scan_unclaimed_tasks()
-            if unclaimed:
-                claim_task(unclaimed[0]["id"], name)
-                resume = True; break
-        if not resume:
-            self._set_status(name, "shutdown")
-            return
-        self._set_status(name, "working")
 ```
 
 ## What Changed From s10
@@ -209,18 +126,12 @@ def _loop(self, name, role, prompt):
 | Identity       | System prompt    | + re-injection after compress|
 | Timeout        | None             | 60s idle -> auto shutdown  |
 
-## Design Rationale
-
-Polling + timeout makes agents self-organizing without a central coordinator. Each agent independently polls the task board, claims unclaimed work, and returns to idle when done. The timeout triggers the poll cycle, and if no work appears within the window, the agent shuts itself down. This is the same pattern as work-stealing thread pools -- distributed, no single point of failure. Identity re-injection after compression ensures agents maintain their role even when conversation history is summarized away.
-
 ## Try It
 
 ```sh
 cd learn-claude-code
 python agents/s11_autonomous_agents.py
 ```
-
-Example prompts to try:
 
 1. `Create 3 tasks on the board, then spawn alice and bob. Watch them auto-claim.`
 2. `Spawn a coder teammate and let it find work from the task board itself`

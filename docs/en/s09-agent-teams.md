@@ -1,31 +1,16 @@
 # s09: Agent Teams
 
-> Persistent teammates with JSONL inboxes are one teaching protocol for turning isolated agents into a communicating team -- spawn, message, broadcast, and drain.
+`s01 > s02 > s03 > s04 > s05 > s06 | s07 > s08 > [ s09 ] s10 > s11 > s12`
 
-## The Problem
+> *"Append to send, drain to read"* -- async mailboxes for persistent teammates.
 
-Subagents (s04) are disposable: spawn, work, return summary, die. They
-have no identity, no memory between invocations, and no way to receive
-follow-up instructions. Background tasks (s08) run shell commands but
-cannot make LLM-guided decisions or communicate findings.
+## Problem
 
-For real teamwork you need three things: (1) persistent agents that
-survive beyond a single prompt, (2) identity and lifecycle management,
-and (3) a communication channel between agents. Without messaging, even
-persistent teammates are deaf and mute -- they can work in parallel but
-never coordinate.
+Subagents (s04) are disposable: spawn, work, return summary, die. No identity, no memory between invocations. Background tasks (s08) run shell commands but can't make LLM-guided decisions.
 
-The solution combines a TeammateManager for spawning persistent named
-agents with a MessageBus using JSONL inbox files. Each teammate runs
-its own agent loop in a thread, checks its inbox before every LLM call,
-and can send messages to any other teammate or the lead.
+Real teamwork needs: (1) persistent agents that outlive a single prompt, (2) identity and lifecycle management, (3) a communication channel between agents.
 
-Note on the s06-to-s07 bridge: TodoManager items from s03 die with
-compression (s06). File-based tasks (s07) survive compression because
-they live on disk. Teams build on this same principle -- config.json and
-inbox files persist outside the context window.
-
-## The Solution
+## Solution
 
 ```
 Teammate lifecycle:
@@ -39,28 +24,18 @@ Communication:
       bob.jsonl
       lead.jsonl
 
-                +--------+    send("alice","bob","...")    +--------+
-                | alice  | -----------------------------> |  bob   |
-                | loop   |    bob.jsonl << {json_line}    |  loop  |
-                +--------+                                +--------+
-                     ^                                         |
-                     |        BUS.read_inbox("alice")          |
-                     +---- alice.jsonl -> read + drain ---------+
-
-5 message types:
-+-------------------------+------------------------------+
-| message                 | Normal text between agents   |
-| broadcast               | Sent to all teammates        |
-| shutdown_request        | Request graceful shutdown     |
-| shutdown_response       | Approve/reject shutdown      |
-| plan_approval_response  | Approve/reject plan          |
-+-------------------------+------------------------------+
+              +--------+    send("alice","bob","...")    +--------+
+              | alice  | -----------------------------> |  bob   |
+              | loop   |    bob.jsonl << {json_line}    |  loop  |
+              +--------+                                +--------+
+                   ^                                         |
+                   |        BUS.read_inbox("alice")          |
+                   +---- alice.jsonl -> read + drain ---------+
 ```
 
 ## How It Works
 
-1. The TeammateManager maintains config.json with the team roster.
-   Each member has a name, role, and status.
+1. TeammateManager maintains config.json with the team roster.
 
 ```python
 class TeammateManager:
@@ -73,60 +48,43 @@ class TeammateManager:
 ```
 
 2. `spawn()` creates a teammate and starts its agent loop in a thread.
-   Re-spawning an idle teammate reactivates it.
 
 ```python
 def spawn(self, name: str, role: str, prompt: str) -> str:
-    member = self._find_member(name)
-    if member:
-        if member["status"] not in ("idle", "shutdown"):
-            return f"Error: '{name}' is currently {member['status']}"
-        member["status"] = "working"
-    else:
-        member = {"name": name, "role": role, "status": "working"}
-        self.config["members"].append(member)
+    member = {"name": name, "role": role, "status": "working"}
+    self.config["members"].append(member)
     self._save_config()
     thread = threading.Thread(
         target=self._teammate_loop,
         args=(name, role, prompt), daemon=True)
-    self.threads[name] = thread
     thread.start()
     return f"Spawned teammate '{name}' (role: {role})"
 ```
 
-3. The MessageBus handles JSONL inbox files. `send()` appends a JSON
-   line; `read_inbox()` reads all lines and drains the file.
+3. MessageBus: append-only JSONL inboxes. `send()` appends a JSON line; `read_inbox()` reads all and drains.
 
 ```python
 class MessageBus:
-    def send(self, sender, to, content,
-             msg_type="message", extra=None):
+    def send(self, sender, to, content, msg_type="message", extra=None):
         msg = {"type": msg_type, "from": sender,
-               "content": content,
-               "timestamp": time.time()}
+               "content": content, "timestamp": time.time()}
         if extra:
             msg.update(extra)
         with open(self.dir / f"{to}.jsonl", "a") as f:
             f.write(json.dumps(msg) + "\n")
-        return f"Sent {msg_type} to {to}"
 
     def read_inbox(self, name):
         path = self.dir / f"{name}.jsonl"
-        if not path.exists():
-            return "[]"
-        msgs = [json.loads(l)
-                for l in path.read_text().strip().splitlines()
-                if l]
+        if not path.exists(): return "[]"
+        msgs = [json.loads(l) for l in path.read_text().strip().splitlines() if l]
         path.write_text("")  # drain
         return json.dumps(msgs, indent=2)
 ```
 
-4. Each teammate checks its inbox before every LLM call and injects
-   received messages into the conversation context.
+4. Each teammate checks its inbox before every LLM call, injecting received messages into context.
 
 ```python
 def _teammate_loop(self, name, role, prompt):
-    sys_prompt = f"You are '{name}', role: {role}, at {WORKDIR}."
     messages = [{"role": "user", "content": prompt}]
     for _ in range(50):
         inbox = BUS.read_inbox(name)
@@ -135,66 +93,11 @@ def _teammate_loop(self, name, role, prompt):
                 "content": f"<inbox>{inbox}</inbox>"})
             messages.append({"role": "assistant",
                 "content": "Noted inbox messages."})
-        response = client.messages.create(
-            model=MODEL, system=sys_prompt,
-            messages=messages, tools=TOOLS)
-        messages.append({"role": "assistant",
-                         "content": response.content})
+        response = client.messages.create(...)
         if response.stop_reason != "tool_use":
             break
         # execute tools, append results...
     self._find_member(name)["status"] = "idle"
-    self._save_config()
-```
-
-5. `broadcast()` sends the same message to all teammates except the
-   sender.
-
-```python
-def broadcast(self, sender, content, teammates):
-    count = 0
-    for name in teammates:
-        if name != sender:
-            self.send(sender, name, content, "broadcast")
-            count += 1
-    return f"Broadcast to {count} teammates"
-```
-
-## Key Code
-
-The TeammateManager + MessageBus core (from `agents/s09_agent_teams.py`):
-
-```python
-class TeammateManager:
-    def spawn(self, name, role, prompt):
-        member = self._find_member(name) or {
-            "name": name, "role": role, "status": "working"
-        }
-        member["status"] = "working"
-        self._save_config()
-        thread = threading.Thread(
-            target=self._teammate_loop,
-            args=(name, role, prompt), daemon=True)
-        thread.start()
-        return f"Spawned '{name}'"
-
-class MessageBus:
-    def send(self, sender, to, content,
-             msg_type="message", extra=None):
-        msg = {"type": msg_type, "from": sender,
-               "content": content, "timestamp": time.time()}
-        if extra: msg.update(extra)
-        with open(self.dir / f"{to}.jsonl", "a") as f:
-            f.write(json.dumps(msg) + "\n")
-
-    def read_inbox(self, name):
-        path = self.dir / f"{name}.jsonl"
-        if not path.exists(): return "[]"
-        msgs = [json.loads(l)
-                for l in path.read_text().strip().splitlines()
-                if l]
-        path.write_text("")
-        return json.dumps(msgs, indent=2)
 ```
 
 ## What Changed From s08
@@ -206,16 +109,7 @@ class MessageBus:
 | Persistence    | None             | config.json + JSONL inboxes|
 | Threads        | Background cmds  | Full agent loops per thread|
 | Lifecycle      | Fire-and-forget  | idle -> working -> idle    |
-| Communication  | None             | 5 message types + broadcast|
-
-Teaching simplification: this implementation does not use lock files
-for inbox access. In production, concurrent append from multiple writers
-would need file locking or atomic rename. The single-writer-per-inbox
-pattern used here is safe for the teaching scenario.
-
-## Design Rationale
-
-File-based mailboxes (append-only JSONL) are easy to inspect and reason about in a teaching codebase. The "drain on read" pattern (read all, truncate) gives batch delivery with very little machinery. The tradeoff is latency -- messages are only seen at the next poll -- but for LLM-driven agents where each turn takes seconds, polling latency is acceptable for this course.
+| Communication  | None             | message + broadcast        |
 
 ## Try It
 
@@ -223,8 +117,6 @@ File-based mailboxes (append-only JSONL) are easy to inspect and reason about in
 cd learn-claude-code
 python agents/s09_agent_teams.py
 ```
-
-Example prompts to try:
 
 1. `Spawn alice (coder) and bob (tester). Have alice send bob a message.`
 2. `Broadcast "status update: phase 1 complete" to all teammates`

@@ -1,49 +1,37 @@
 # s01: The Agent Loop
 
-> The core of a coding agent is a while loop that feeds tool results back to the model until the model decides to stop.
+`[ s01 ] s02 > s03 > s04 > s05 > s06 | s07 > s08 > s09 > s10 > s11 > s12`
 
-## The Problem
+> *"One loop & Bash is all you need"* -- one tool + one loop = an agent.
 
-Why can't a language model just answer a coding question? Because coding
-requires _interaction with the real world_. The model needs to read files,
-run tests, check errors, and iterate. A single prompt-response pair cannot
-do this.
+## Problem
 
-Without the agent loop, you would have to copy-paste outputs back into the
-model yourself. The user becomes the loop. The agent loop automates this:
-call the model, execute whatever tools it asks for, feed the results back,
-repeat until the model says "I'm done."
+A language model can reason about code, but it can't *touch* the real world -- can't read files, run tests, or check errors. Without a loop, every tool call requires you to manually copy-paste results back. You become the loop.
 
-Consider a simple task: "Create a Python file that prints hello." The model
-needs to (1) decide to write a file, (2) write it, (3) verify it works.
-That is three tool calls minimum. Without a loop, each one requires manual
-human intervention.
-
-## The Solution
+## Solution
 
 ```
-+----------+      +-------+      +---------+
-|   User   | ---> |  LLM  | ---> |  Tool   |
-|  prompt  |      |       |      | execute |
-+----------+      +---+---+      +----+----+
-                      ^               |
-                      |   tool_result |
-                      +---------------+
-                      (loop continues)
-
-The loop terminates when stop_reason != "tool_use".
-That single condition is the entire control flow.
++--------+      +-------+      +---------+
+|  User  | ---> |  LLM  | ---> |  Tool   |
+| prompt |      |       |      | execute |
++--------+      +---+---+      +----+----+
+                    ^                |
+                    |   tool_result  |
+                    +----------------+
+                    (loop until stop_reason != "tool_use")
 ```
+
+One exit condition controls the entire flow. The loop runs until the model stops calling tools.
 
 ## How It Works
 
-1. The user provides a prompt. It becomes the first message.
+1. User prompt becomes the first message.
 
 ```python
-history.append({"role": "user", "content": query})
+messages.append({"role": "user", "content": query})
 ```
 
-2. The messages array is sent to the LLM along with the tool definitions.
+2. Send messages + tool definitions to the LLM.
 
 ```python
 response = client.messages.create(
@@ -52,25 +40,18 @@ response = client.messages.create(
 )
 ```
 
-3. The assistant response is appended to messages.
+3. Append the assistant response. Check `stop_reason` -- if the model didn't call a tool, we're done.
 
 ```python
 messages.append({"role": "assistant", "content": response.content})
-```
-
-4. We check the stop reason. If the model did not call a tool, the loop
-   ends. In this minimal lesson implementation, this is the only loop exit
-   condition.
-
-```python
 if response.stop_reason != "tool_use":
     return
 ```
 
-5. For each tool_use block in the response, execute the tool (bash in this
-   session) and collect results.
+4. Execute each tool call, collect results, append as a user message. Loop back to step 2.
 
 ```python
+results = []
 for block in response.content:
     if block.type == "tool_use":
         output = run_bash(block.input["command"])
@@ -79,29 +60,24 @@ for block in response.content:
             "tool_use_id": block.id,
             "content": output,
         })
-```
-
-6. The results are appended as a user message, and the loop continues.
-
-```python
 messages.append({"role": "user", "content": results})
 ```
 
-## Key Code
-
-The minimum viable agent -- the entire pattern in under 30 lines
-(from `agents/s01_agent_loop.py`, lines 66-86):
+Assembled into one function:
 
 ```python
-def agent_loop(messages: list):
+def agent_loop(query):
+    messages = [{"role": "user", "content": query}]
     while True:
         response = client.messages.create(
             model=MODEL, system=SYSTEM, messages=messages,
             tools=TOOLS, max_tokens=8000,
         )
         messages.append({"role": "assistant", "content": response.content})
+
         if response.stop_reason != "tool_use":
             return
+
         results = []
         for block in response.content:
             if block.type == "tool_use":
@@ -114,9 +90,9 @@ def agent_loop(messages: list):
         messages.append({"role": "user", "content": results})
 ```
 
-## What Changed
+That's the entire agent in under 30 lines. Everything else in this course layers on top -- without changing the loop.
 
-This is session 1 -- the starting point. There is no prior session.
+## What Changed
 
 | Component     | Before     | After                          |
 |---------------|------------|--------------------------------|
@@ -125,18 +101,12 @@ This is session 1 -- the starting point. There is no prior session.
 | Messages      | (none)     | Accumulating list              |
 | Control flow  | (none)     | `stop_reason != "tool_use"`    |
 
-## Design Rationale
-
-This loop is the foundation of LLM-based agents. Production implementations add error handling, token counting, streaming, retry logic, permission policy, and lifecycle orchestration, but the core interaction pattern still starts here. The simplicity is the point for this session: in this minimal implementation, one exit condition (`stop_reason != "tool_use"`) controls the flow we need to learn first. Everything else in this course layers on top of this loop. Understanding this loop gives you the base model, not the full production architecture.
-
 ## Try It
 
 ```sh
 cd learn-claude-code
 python agents/s01_agent_loop.py
 ```
-
-Example prompts to try:
 
 1. `Create a file called hello.py that prints "Hello, World!"`
 2. `List all Python files in this directory`

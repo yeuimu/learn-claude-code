@@ -24,7 +24,7 @@
 **12 个递进式课程, 从简单循环到隔离化的自治执行。**
 **每个课程添加一个机制。每个机制有一句格言。**
 
-> **s01** &nbsp; *"Bash 就够了"* &mdash; 一个工具 + 一个循环 = 一个智能体
+> **s01** &nbsp; *"One loop & Bash is all you need"* &mdash; 一个工具 + 一个循环 = 一个智能体
 >
 > **s02** &nbsp; *"循环没有变"* &mdash; 加工具就是加 handler, 不是重写循环
 >
@@ -101,8 +101,8 @@ pip install -r requirements.txt
 cp .env.example .env   # 编辑 .env 填入你的 ANTHROPIC_API_KEY
 
 python agents/s01_agent_loop.py       # 从这里开始
-python agents/s11_autonomous_agents.py  # 完整自治团队
-python agents/s12_worktree_task_isolation.py  # Task 感知的 worktree 隔离
+python agents/s12_worktree_task_isolation.py  # 完整递进终点
+python agents/s_full.py               # 总纲: 全部机制合一
 ```
 
 ### Web 平台
@@ -121,13 +121,13 @@ cd web && npm install && npm run dev   # http://localhost:3000
 s01  Agent 循环              [1]     s03  TodoWrite               [5]
      while + stop_reason                  TodoManager + nag 提醒
      |                                    |
-     +-> s02  工具               [4]     s04  子智能体             [5]
+     +-> s02  Tool Use            [4]     s04  子智能体             [5]
               dispatch map: name->handler     每个子智能体独立 messages[]
                                               |
                                          s05  Skills               [5]
                                               SKILL.md 通过 tool_result 注入
                                               |
-                                         s06  Compact              [5]
+                                         s06  Context Compact      [5]
                                               三层上下文压缩
 
 第三阶段: 持久化                     第四阶段: 团队
@@ -152,7 +152,7 @@ s08  后台任务                [6]     s10  团队协议               [12]
 ```
 learn-claude-code/
 |
-|-- agents/                        # Python 参考实现 (s01-s12 + 完整版)
+|-- agents/                        # Python 参考实现 (s01-s12 + s_full 总纲)
 |-- docs/{en,zh,ja}/               # 心智模型优先的文档 (3 种语言)
 |-- web/                           # 交互式学习平台 (Next.js)
 |-- skills/                        # s05 的 Skill 文件
@@ -166,18 +166,62 @@ learn-claude-code/
 
 | 课程 | 主题 | 格言 |
 |------|------|------|
-| [s01](./docs/zh/s01-the-agent-loop.md) | Agent 循环 | *Bash 就够了* |
-| [s02](./docs/zh/s02-tool-use.md) | 工具 | *循环没有变* |
+| [s01](./docs/zh/s01-the-agent-loop.md) | Agent 循环 | *One loop & Bash is all you need* |
+| [s02](./docs/zh/s02-tool-use.md) | Tool Use | *循环没有变* |
 | [s03](./docs/zh/s03-todo-write.md) | TodoWrite | *先计划再行动* |
 | [s04](./docs/zh/s04-subagent.md) | 子智能体 | *进程隔离 = 上下文隔离* |
 | [s05](./docs/zh/s05-skill-loading.md) | Skills | *按需加载, 而非预装* |
-| [s06](./docs/zh/s06-context-compact.md) | Compact | *策略性遗忘* |
+| [s06](./docs/zh/s06-context-compact.md) | Context Compact | *策略性遗忘* |
 | [s07](./docs/zh/s07-task-system.md) | 任务系统 | *状态在压缩后存活* |
 | [s08](./docs/zh/s08-background-tasks.md) | 后台任务 | *发射后不管* |
 | [s09](./docs/zh/s09-agent-teams.md) | 智能体团队 | *追加即发送, 排空即读取* |
 | [s10](./docs/zh/s10-team-protocols.md) | 团队协议 | *同一个 request_id, 两个协议* |
 | [s11](./docs/zh/s11-autonomous-agents.md) | 自治智能体 | *轮询, 认领, 工作, 重复* |
 | [s12](./docs/zh/s12-worktree-task-isolation.md) | Worktree + 任务隔离 | *目录隔离, 任务 ID 协调* |
+
+## 学完之后 -- 从理解到落地
+
+12 个课程走完, 你已经从内到外理解了 agent 的工作原理。两种方式把知识变成产品:
+
+### Kode Agent CLI -- 开源 Coding Agent CLI
+
+> `npm i -g @shareai-lab/kode`
+
+支持 Skill & LSP, 适配 Windows, 可接 GLM / MiniMax / DeepSeek 等开放模型。装完即用。
+
+GitHub: **[shareAI-lab/Kode-cli](https://github.com/shareAI-lab/Kode-cli)**
+
+### Kode Agent SDK -- 把 Agent 能力嵌入你的应用
+
+官方 Claude Code Agent SDK 底层与完整 CLI 进程通信 -- 每个并发用户 = 一个终端进程。Kode SDK 是独立库, 无 per-user 进程开销, 可嵌入后端、浏览器插件、嵌入式设备等任意运行时。
+
+GitHub: **[shareAI-lab/Kode-agent-sdk](https://github.com/shareAI-lab/Kode-agent-sdk)**
+
+---
+
+## 姊妹教程: 从*被动临时会话*到*主动常驻助手*
+
+本仓库教的 agent 属于 **用完即走** 型 -- 开终端、给任务、做完关掉, 下次重开是全新会话。Claude Code 就是这种模式。
+
+但 [OpenClaw](https://github.com/openclaw/openclaw) (小龙虾) 证明了另一种可能: 在同样的 agent core 之上, 加两个机制就能让 agent 从"踹一下动一下"变成"自己隔 30 秒醒一次找活干":
+
+- **心跳 (Heartbeat)** -- 每 30 秒系统给 agent 发一条消息, 让它检查有没有事可做。没事就继续睡, 有事立刻行动。
+- **定时任务 (Cron)** -- agent 可以给自己安排未来要做的事, 到点自动执行。
+
+再加上 IM 多通道路由 (WhatsApp/Telegram/Slack/Discord 等 13+ 平台)、不清空的上下文记忆、Soul 人格系统, agent 就从一个临时工具变成了始终在线的个人 AI 助手。
+
+**[claw0](https://github.com/shareAI-lab/claw0)** 是我们的姊妹教学仓库, 从零拆解这些机制:
+
+```
+claw agent = agent core + heartbeat + cron + IM chat + memory + soul
+```
+
+```
+learn-claude-code                   claw0
+(agent 运行时内核:                   (主动式常驻 AI 助手:
+ 循环、工具、规划、                    心跳、定时任务、IM 通道、
+ 团队、worktree 隔离)                  记忆、Soul 人格)
+```
 
 ## 许可证
 

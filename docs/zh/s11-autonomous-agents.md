@@ -1,16 +1,16 @@
 # s11: Autonomous Agents (自治智能体)
 
-> 带任务看板轮询的空闲循环让队友能自己发现和认领工作, 上下文压缩后通过身份重注入保持角色认知。
+`s01 > s02 > s03 > s04 > s05 > s06 | s07 > s08 > s09 > s10 > [ s11 ] s12`
+
+> *"Poll, claim, work, repeat"* -- 不需要协调者, 智能体自己找活干。
 
 ## 问题
 
-在 s09-s10 中, 队友只在被明确指示时才工作。领导必须用特定的 prompt 生成每个队友。如果任务看板上有 10 个未认领的任务, 领导必须手动分配每一个。这无法扩展。
+s09-s10 中, 队友只在被明确指派时才动。领导得给每个队友写 prompt, 任务看板上 10 个未认领的任务得手动分配。这扩展不了。
 
-真正的自治意味着队友自己寻找工作。当一个队友完成当前任务后, 它应该扫描任务看板寻找未认领的工作, 认领一个任务, 然后开始工作 -- 不需要领导的任何指令。
+真正的自治: 队友自己扫描任务看板, 认领没人做的任务, 做完再找下一个。
 
-但自治智能体面临一个微妙问题: 上下文压缩后, 智能体可能忘记自己是谁。如果消息被摘要化, 原始系统提示中的身份 ("你是 alice, 角色: coder") 就会淡化。身份重注入通过在压缩后的上下文开头插入身份块来解决这个问题。
-
-注: token 估算使用字符数/4 (粗略)。nag 阈值 3 轮是为教学可见性设的低值。
+一个细节: 上下文压缩 (s06) 后智能体可能忘了自己是谁。身份重注入解决这个问题。
 
 ## 解决方案
 
@@ -26,8 +26,7 @@ Teammate lifecycle with idle cycle:
 | WORK  | <------------- |  LLM  |
 +---+---+                +-------+
     |
-    | stop_reason != tool_use
-    | (or idle tool called)
+    | stop_reason != tool_use (or idle tool called)
     v
 +--------+
 |  IDLE  |  poll every 5s for up to 60s
@@ -42,12 +41,11 @@ Teammate lifecycle with idle cycle:
 Identity re-injection after compression:
   if len(messages) <= 3:
     messages.insert(0, identity_block)
-    "You are 'alice', role: coder, team: my-team"
 ```
 
 ## 工作原理
 
-1. 队友循环有两个阶段: WORK 和 IDLE。WORK 阶段运行标准的 agent loop。当 LLM 停止调用工具 (或调用了 `idle` 工具) 时, 队友进入 IDLE 阶段。
+1. 队友循环分两个阶段: WORK 和 IDLE。LLM 停止调用工具 (或调用了 `idle`) 时, 进入 IDLE。
 
 ```python
 def _loop(self, name, role, prompt):
@@ -55,12 +53,6 @@ def _loop(self, name, role, prompt):
         # -- WORK PHASE --
         messages = [{"role": "user", "content": prompt}]
         for _ in range(50):
-            inbox = BUS.read_inbox(name)
-            for msg in inbox:
-                if msg.get("type") == "shutdown_request":
-                    self._set_status(name, "shutdown")
-                    return
-                messages.append(...)
             response = client.messages.create(...)
             if response.stop_reason != "tool_use":
                 break
@@ -81,32 +73,27 @@ def _loop(self, name, role, prompt):
 
 ```python
 def _idle_poll(self, name, messages):
-    polls = IDLE_TIMEOUT // POLL_INTERVAL  # 60s / 5s = 12
-    for _ in range(polls):
+    for _ in range(IDLE_TIMEOUT // POLL_INTERVAL):  # 60s / 5s = 12
         time.sleep(POLL_INTERVAL)
-        # Check inbox for new messages
         inbox = BUS.read_inbox(name)
         if inbox:
             messages.append({"role": "user",
                 "content": f"<inbox>{inbox}</inbox>"})
             return True
-        # Scan task board for unclaimed tasks
         unclaimed = scan_unclaimed_tasks()
         if unclaimed:
-            task = unclaimed[0]
-            claim_task(task["id"], name)
+            claim_task(unclaimed[0]["id"], name)
             messages.append({"role": "user",
-                "content": f"<auto-claimed>Task #{task['id']}: "
-                           f"{task['subject']}</auto-claimed>"})
+                "content": f"<auto-claimed>Task #{unclaimed[0]['id']}: "
+                           f"{unclaimed[0]['subject']}</auto-claimed>"})
             return True
     return False  # timeout -> shutdown
 ```
 
-3. 任务看板扫描查找 pending 状态、无 owner、未被阻塞的任务。
+3. 任务看板扫描: 找 pending 状态、无 owner、未被阻塞的任务。
 
 ```python
 def scan_unclaimed_tasks() -> list:
-    TASKS_DIR.mkdir(exist_ok=True)
     unclaimed = []
     for f in sorted(TASKS_DIR.glob("task_*.json")):
         task = json.loads(f.read_text())
@@ -115,73 +102,17 @@ def scan_unclaimed_tasks() -> list:
                 and not task.get("blockedBy")):
             unclaimed.append(task)
     return unclaimed
-
-def claim_task(task_id: int, owner: str):
-    path = TASKS_DIR / f"task_{task_id}.json"
-    task = json.loads(path.read_text())
-    task["status"] = "in_progress"
-    task["owner"] = owner
-    path.write_text(json.dumps(task, indent=2))
 ```
 
-4. 身份重注入: 当上下文过短时插入身份块, 表明发生了压缩。
+4. 身份重注入: 上下文过短 (说明发生了压缩) 时, 在开头插入身份块。
 
 ```python
-def make_identity_block(name, role, team_name):
-    return {"role": "user",
-            "content": f"<identity>You are '{name}', "
-                       f"role: {role}, team: {team_name}. "
-                       f"Continue your work.</identity>"}
-
-# Before resuming work after idle:
 if len(messages) <= 3:
-    messages.insert(0, make_identity_block(
-        name, role, team_name))
+    messages.insert(0, {"role": "user",
+        "content": f"<identity>You are '{name}', role: {role}, "
+                   f"team: {team_name}. Continue your work.</identity>"})
     messages.insert(1, {"role": "assistant",
         "content": f"I am {name}. Continuing."})
-```
-
-5. `idle` 工具让队友显式地表示没有更多工作, 提前进入空闲轮询阶段。
-
-```python
-{"name": "idle",
- "description": "Signal that you have no more work. "
-                "Enters idle polling phase.",
- "input_schema": {"type": "object", "properties": {}}},
-```
-
-## 核心代码
-
-自治循环 (来自 `agents/s11_autonomous_agents.py`):
-
-```python
-def _loop(self, name, role, prompt):
-    while True:
-        # WORK PHASE
-        for _ in range(50):
-            response = client.messages.create(...)
-            if response.stop_reason != "tool_use":
-                break
-            for block in response.content:
-                if block.name == "idle":
-                    idle_requested = True
-            if idle_requested:
-                break
-
-        # IDLE PHASE
-        self._set_status(name, "idle")
-        for _ in range(IDLE_TIMEOUT // POLL_INTERVAL):
-            time.sleep(POLL_INTERVAL)
-            inbox = BUS.read_inbox(name)
-            if inbox: resume = True; break
-            unclaimed = scan_unclaimed_tasks()
-            if unclaimed:
-                claim_task(unclaimed[0]["id"], name)
-                resume = True; break
-        if not resume:
-            self._set_status(name, "shutdown")
-            return
-        self._set_status(name, "working")
 ```
 
 ## 相对 s10 的变更
@@ -190,14 +121,10 @@ def _loop(self, name, role, prompt):
 |----------------|------------------|----------------------------------|
 | Tools          | 12               | 14 (+idle, +claim_task)          |
 | 自治性         | 领导指派         | 自组织                           |
-| 空闲阶段       | 无               | 轮询收件箱 + 任务看板           |
-| 任务认领       | 仅手动           | 自动认领未认领任务               |
+| 空闲阶段       | 无               | 轮询收件箱 + 任务看板            |
+| 任务认领       | 仅手动           | 自动认领未分配任务               |
 | 身份           | 系统提示         | + 压缩后重注入                   |
 | 超时           | 无               | 60 秒空闲 -> 自动关机            |
-
-## 设计原理
-
-轮询 + 超时使智能体无需中央协调器即可自组织。每个智能体独立轮询任务看板, 认领未认领的工作, 完成后回到空闲状态。超时触发轮询循环, 如果在窗口期内没有工作出现, 智能体自行关机。这与工作窃取线程池的模式相同 -- 分布式, 无单点故障。压缩后的身份重注入确保智能体即使在对话历史被摘要后仍能保持其角色。
 
 ## 试一试
 
@@ -206,7 +133,7 @@ cd learn-claude-code
 python agents/s11_autonomous_agents.py
 ```
 
-可以尝试的提示:
+试试这些 prompt (英文 prompt 对 LLM 效果更好, 也可以用中文):
 
 1. `Create 3 tasks on the board, then spawn alice and bob. Watch them auto-claim.`
 2. `Spawn a coder teammate and let it find work from the task board itself`

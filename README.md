@@ -24,7 +24,7 @@
 **12 progressive sessions, from a simple loop to isolated autonomous execution.**
 **Each session adds one mechanism. Each mechanism has one motto.**
 
-> **s01** &nbsp; *"Bash is all you need"* &mdash; one tool + one loop = an agent
+> **s01** &nbsp; *"One loop & Bash is all you need"* &mdash; one tool + one loop = an agent
 >
 > **s02** &nbsp; *"The loop didn't change"* &mdash; adding tools means adding handlers, not rewriting the loop
 >
@@ -101,8 +101,8 @@ pip install -r requirements.txt
 cp .env.example .env   # Edit .env with your ANTHROPIC_API_KEY
 
 python agents/s01_agent_loop.py       # Start here
-python agents/s11_autonomous_agents.py  # Full autonomous team
-python agents/s12_worktree_task_isolation.py  # Task-aware worktree isolation
+python agents/s12_worktree_task_isolation.py  # Full progression endpoint
+python agents/s_full.py               # Capstone: all mechanisms combined
 ```
 
 ### Web Platform
@@ -121,13 +121,13 @@ Phase 1: THE LOOP                    Phase 2: PLANNING & KNOWLEDGE
 s01  The Agent Loop          [1]     s03  TodoWrite               [5]
      while + stop_reason                  TodoManager + nag reminder
      |                                    |
-     +-> s02  Tools              [4]     s04  Subagents            [5]
+     +-> s02  Tool Use            [4]     s04  Subagents            [5]
               dispatch map: name->handler     fresh messages[] per child
                                               |
                                          s05  Skills               [5]
                                               SKILL.md via tool_result
                                               |
-                                         s06  Compact              [5]
+                                         s06  Context Compact      [5]
                                               3-layer compression
 
 Phase 3: PERSISTENCE                 Phase 4: TEAMS
@@ -152,7 +152,7 @@ s08  Background Tasks        [6]     s10  Team Protocols          [12]
 ```
 learn-claude-code/
 |
-|-- agents/                        # Python reference implementations (s01-s12 + full)
+|-- agents/                        # Python reference implementations (s01-s12 + s_full capstone)
 |-- docs/{en,zh,ja}/               # Mental-model-first documentation (3 languages)
 |-- web/                           # Interactive learning platform (Next.js)
 |-- skills/                        # Skill files for s05
@@ -166,18 +166,62 @@ Available in [English](./docs/en/) | [中文](./docs/zh/) | [日本語](./docs/j
 
 | Session | Topic | Motto |
 |---------|-------|-------|
-| [s01](./docs/en/s01-the-agent-loop.md) | The Agent Loop | *Bash is all you need* |
-| [s02](./docs/en/s02-tool-use.md) | Tools | *The loop didn't change* |
+| [s01](./docs/en/s01-the-agent-loop.md) | The Agent Loop | *One loop & Bash is all you need* |
+| [s02](./docs/en/s02-tool-use.md) | Tool Use | *The loop didn't change* |
 | [s03](./docs/en/s03-todo-write.md) | TodoWrite | *Plan before you act* |
 | [s04](./docs/en/s04-subagent.md) | Subagents | *Process isolation = context isolation* |
 | [s05](./docs/en/s05-skill-loading.md) | Skills | *Load on demand, not upfront* |
-| [s06](./docs/en/s06-context-compact.md) | Compact | *Strategic forgetting* |
+| [s06](./docs/en/s06-context-compact.md) | Context Compact | *Strategic forgetting* |
 | [s07](./docs/en/s07-task-system.md) | Tasks | *State survives /compact* |
 | [s08](./docs/en/s08-background-tasks.md) | Background Tasks | *Fire and forget* |
 | [s09](./docs/en/s09-agent-teams.md) | Agent Teams | *Append to send, drain to read* |
 | [s10](./docs/en/s10-team-protocols.md) | Team Protocols | *Same request_id, two protocols* |
 | [s11](./docs/en/s11-autonomous-agents.md) | Autonomous Agents | *Poll, claim, work, repeat* |
 | [s12](./docs/en/s12-worktree-task-isolation.md) | Worktree + Task Isolation | *Isolate by directory, coordinate by task ID* |
+
+## What's Next -- from understanding to shipping
+
+After the 12 sessions you understand how an agent works inside out. Two ways to put that knowledge to work:
+
+### Kode Agent CLI -- Open-Source Coding Agent CLI
+
+> `npm i -g @shareai-lab/kode`
+
+Skill & LSP support, Windows-ready, pluggable with GLM / MiniMax / DeepSeek and other open models. Install and go.
+
+GitHub: **[shareAI-lab/Kode-cli](https://github.com/shareAI-lab/Kode-cli)**
+
+### Kode Agent SDK -- Embed Agent Capabilities in Your App
+
+The official Claude Code Agent SDK communicates with a full CLI process under the hood -- each concurrent user means a separate terminal process. Kode SDK is a standalone library with no per-user process overhead, embeddable in backends, browser extensions, embedded devices, or any runtime.
+
+GitHub: **[shareAI-lab/Kode-agent-sdk](https://github.com/shareAI-lab/Kode-agent-sdk)**
+
+---
+
+## Sister Repo: from *on-demand sessions* to *always-on assistant*
+
+The agent this repo teaches is **use-and-discard** -- open a terminal, give it a task, close when done, next session starts blank. That is the Claude Code model.
+
+[OpenClaw](https://github.com/openclaw/openclaw) proved another possibility: on top of the same agent core, two mechanisms turn the agent from "poke it to make it move" into "it wakes up every 30 seconds to look for work":
+
+- **Heartbeat** -- every 30s the system sends the agent a message to check if there is anything to do. Nothing? Go back to sleep. Something? Act immediately.
+- **Cron** -- the agent can schedule its own future tasks, executed automatically when the time comes.
+
+Add multi-channel IM routing (WhatsApp / Telegram / Slack / Discord, 13+ platforms), persistent context memory, and a Soul personality system, and the agent goes from a disposable tool to an always-on personal AI assistant.
+
+**[claw0](https://github.com/shareAI-lab/claw0)** is our companion teaching repo that deconstructs these mechanisms from scratch:
+
+```
+claw agent = agent core + heartbeat + cron + IM chat + memory + soul
+```
+
+```
+learn-claude-code                   claw0
+(agent runtime core:                (proactive always-on assistant:
+ loop, tools, planning,              heartbeat, cron, IM channels,
+ teams, worktree isolation)          memory, soul personality)
+```
 
 ## License
 

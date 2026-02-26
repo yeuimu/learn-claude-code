@@ -1,16 +1,16 @@
 # s11: Autonomous Agents
 
-> タスクボードポーリング付きのアイドルサイクルにより、チームメイトが自分で作業を見つけて確保できるようになり、コンテキスト圧縮後にはアイデンティティの再注入が行われる。
+`s01 > s02 > s03 > s04 > s05 > s06 | s07 > s08 > s09 > s10 > [ s11 ] s12`
+
+> *"Poll, claim, work, repeat"* -- コーディネーター不要、エージェントが自己組織化する。
 
 ## 問題
 
-s09-s10では、チームメイトは明示的に指示された時のみ作業する。リーダーは各チームメイトを特定のプロンプトでspawnしなければならない。タスクボードに未割り当てのタスクが10個あっても、リーダーが手動で各タスクを割り当てなければならない。これはスケールしない。
+s09-s10では、チームメイトは明示的に指示された時のみ作業する。リーダーは各チームメイトを特定のプロンプトでspawnしなければならない。タスクボードに未割り当てのタスクが10個あっても、リーダーが手動で各タスクを割り当てる。これはスケールしない。
 
-真の自律性とは、チームメイトが自分で作業を見つけることだ。チームメイトが現在のタスクを完了したら、タスクボードで未確保の作業をスキャンし、タスクを確保し、作業を開始すべきだ -- リーダーからの指示なしに。
+真の自律性とは、チームメイトが自分で作業を見つけること: タスクボードをスキャンし、未確保のタスクを確保し、作業し、完了したら次を探す。
 
-しかし自律エージェントには微妙な問題がある: コンテキスト圧縮後に、エージェントが自分が誰かを忘れる可能性がある。メッセージが要約されると、元のシステムプロンプトのアイデンティティ(「あなたはalice、役割はcoder」)が薄れる。アイデンティティの再注入は、圧縮されたコンテキストの先頭にアイデンティティブロックを挿入することでこれを解決する。
-
-注: トークン推定は文字数/4（大まか）。nag 閾値 3 ラウンドは可視化のために低く設定。
+もう1つの問題: コンテキスト圧縮(s06)後にエージェントが自分の正体を忘れる可能性がある。アイデンティティ再注入がこれを解決する。
 
 ## 解決策
 
@@ -26,8 +26,7 @@ Teammate lifecycle with idle cycle:
 | WORK  | <------------- |  LLM  |
 +---+---+                +-------+
     |
-    | stop_reason != tool_use
-    | (or idle tool called)
+    | stop_reason != tool_use (or idle tool called)
     v
 +--------+
 |  IDLE  |  poll every 5s for up to 60s
@@ -42,12 +41,11 @@ Teammate lifecycle with idle cycle:
 Identity re-injection after compression:
   if len(messages) <= 3:
     messages.insert(0, identity_block)
-    "You are 'alice', role: coder, team: my-team"
 ```
 
 ## 仕組み
 
-1. チームメイトのループにはWORKとIDLEの2つのフェーズがある。WORKは標準的なagent loopを実行する。LLMがツール呼び出しを停止した時(または`idle`ツールを呼び出した時)、チームメイトはIDLEフェーズに入る。
+1. チームメイトのループはWORKとIDLEの2フェーズ。LLMがツール呼び出しを止めた時(または`idle`ツールを呼んだ時)、IDLEフェーズに入る。
 
 ```python
 def _loop(self, name, role, prompt):
@@ -55,12 +53,6 @@ def _loop(self, name, role, prompt):
         # -- WORK PHASE --
         messages = [{"role": "user", "content": prompt}]
         for _ in range(50):
-            inbox = BUS.read_inbox(name)
-            for msg in inbox:
-                if msg.get("type") == "shutdown_request":
-                    self._set_status(name, "shutdown")
-                    return
-                messages.append(...)
             response = client.messages.create(...)
             if response.stop_reason != "tool_use":
                 break
@@ -77,36 +69,31 @@ def _loop(self, name, role, prompt):
         self._set_status(name, "working")
 ```
 
-2. IDLEフェーズがインボックスとタスクボードをループでポーリングする。
+2. IDLEフェーズがインボックスとタスクボードをポーリングする。
 
 ```python
 def _idle_poll(self, name, messages):
-    polls = IDLE_TIMEOUT // POLL_INTERVAL  # 60s / 5s = 12
-    for _ in range(polls):
+    for _ in range(IDLE_TIMEOUT // POLL_INTERVAL):  # 60s / 5s = 12
         time.sleep(POLL_INTERVAL)
-        # Check inbox for new messages
         inbox = BUS.read_inbox(name)
         if inbox:
             messages.append({"role": "user",
                 "content": f"<inbox>{inbox}</inbox>"})
             return True
-        # Scan task board for unclaimed tasks
         unclaimed = scan_unclaimed_tasks()
         if unclaimed:
-            task = unclaimed[0]
-            claim_task(task["id"], name)
+            claim_task(unclaimed[0]["id"], name)
             messages.append({"role": "user",
-                "content": f"<auto-claimed>Task #{task['id']}: "
-                           f"{task['subject']}</auto-claimed>"})
+                "content": f"<auto-claimed>Task #{unclaimed[0]['id']}: "
+                           f"{unclaimed[0]['subject']}</auto-claimed>"})
             return True
     return False  # timeout -> shutdown
 ```
 
-3. タスクボードスキャンがpendingかつ未割り当てかつブロックされていないタスクを探す。
+3. タスクボードスキャン: pendingかつ未割り当てかつブロックされていないタスクを探す。
 
 ```python
 def scan_unclaimed_tasks() -> list:
-    TASKS_DIR.mkdir(exist_ok=True)
     unclaimed = []
     for f in sorted(TASKS_DIR.glob("task_*.json")):
         task = json.loads(f.read_text())
@@ -115,73 +102,17 @@ def scan_unclaimed_tasks() -> list:
                 and not task.get("blockedBy")):
             unclaimed.append(task)
     return unclaimed
-
-def claim_task(task_id: int, owner: str):
-    path = TASKS_DIR / f"task_{task_id}.json"
-    task = json.loads(path.read_text())
-    task["status"] = "in_progress"
-    task["owner"] = owner
-    path.write_text(json.dumps(task, indent=2))
 ```
 
-4. アイデンティティの再注入は、コンテキストが短すぎる場合(圧縮が発生したことを示す)にアイデンティティブロックを挿入する。
+4. アイデンティティ再注入: コンテキストが短すぎる(圧縮が起きた)場合にアイデンティティブロックを挿入する。
 
 ```python
-def make_identity_block(name, role, team_name):
-    return {"role": "user",
-            "content": f"<identity>You are '{name}', "
-                       f"role: {role}, team: {team_name}. "
-                       f"Continue your work.</identity>"}
-
-# Before resuming work after idle:
 if len(messages) <= 3:
-    messages.insert(0, make_identity_block(
-        name, role, team_name))
+    messages.insert(0, {"role": "user",
+        "content": f"<identity>You are '{name}', role: {role}, "
+                   f"team: {team_name}. Continue your work.</identity>"})
     messages.insert(1, {"role": "assistant",
         "content": f"I am {name}. Continuing."})
-```
-
-5. `idle`ツールにより、チームメイトはもう作業がないことを明示的にシグナルし、早期にアイドルポーリングフェーズに入る。
-
-```python
-{"name": "idle",
- "description": "Signal that you have no more work. "
-                "Enters idle polling phase.",
- "input_schema": {"type": "object", "properties": {}}},
-```
-
-## 主要コード
-
-自律ループ(`agents/s11_autonomous_agents.py`):
-
-```python
-def _loop(self, name, role, prompt):
-    while True:
-        # WORK PHASE
-        for _ in range(50):
-            response = client.messages.create(...)
-            if response.stop_reason != "tool_use":
-                break
-            for block in response.content:
-                if block.name == "idle":
-                    idle_requested = True
-            if idle_requested:
-                break
-
-        # IDLE PHASE
-        self._set_status(name, "idle")
-        for _ in range(IDLE_TIMEOUT // POLL_INTERVAL):
-            time.sleep(POLL_INTERVAL)
-            inbox = BUS.read_inbox(name)
-            if inbox: resume = True; break
-            unclaimed = scan_unclaimed_tasks()
-            if unclaimed:
-                claim_task(unclaimed[0]["id"], name)
-                resume = True; break
-        if not resume:
-            self._set_status(name, "shutdown")
-            return
-        self._set_status(name, "working")
 ```
 
 ## s10からの変更点
@@ -195,18 +126,12 @@ def _loop(self, name, role, prompt):
 | Identity       | System prompt    | + re-injection after compress|
 | Timeout        | None             | 60s idle -> auto shutdown  |
 
-## 設計原理
-
-ポーリング + タイムアウトにより、エージェントは中央コーディネーターなしで自己組織化する。各エージェントは独立してタスクボードをポーリングし、未確保の作業を確保し、完了したらアイドルに戻る。タイムアウトがポーリングサイクルをトリガーし、ウィンドウ内に作業が現れなければエージェントは自らシャットダウンする。これはワークスティーリングスレッドプールと同じパターンだ -- 分散型で単一障害点がない。圧縮後のアイデンティティ再注入により、会話履歴が要約された後もエージェントは自身の役割を維持する。
-
 ## 試してみる
 
 ```sh
 cd learn-claude-code
 python agents/s11_autonomous_agents.py
 ```
-
-試せるプロンプト例:
 
 1. `Create 3 tasks on the board, then spawn alice and bob. Watch them auto-claim.`
 2. `Spawn a coder teammate and let it find work from the task board itself`

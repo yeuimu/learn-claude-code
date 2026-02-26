@@ -1,14 +1,12 @@
 # s05: Skills (技能加载)
 
-> 两层技能注入避免了系统提示膨胀: 在系统提示中放技能名称 (低成本), 在 tool_result 中按需放入完整技能内容。
+`s01 > s02 > s03 > s04 > [ s05 ] s06 | s07 > s08 > s09 > s10 > s11 > s12`
+
+> *"Load on demand, not upfront"* -- 知识通过 tool_result 按需注入, 别塞进 system prompt。
 
 ## 问题
 
-智能体需要针对不同领域遵循特定的工作流: git 约定、测试模式、代码审查清单。简单粗暴的做法是把所有内容都塞进系统提示。但系统提示的有效注意力是有限的 -- 文本太多, 模型就会开始忽略其中一部分。
-
-如果你有 10 个技能, 每个 2000 token, 那就是 20,000 token 的系统提示。模型关注开头和结尾, 但会略过中间部分。更糟糕的是, 这些技能中大部分与当前任务无关。文件编辑任务不需要 git 工作流说明。
-
-两层方案解决了这个问题: 第一层在系统提示中放入简短的技能描述 (每个技能约 100 token)。第二层只在模型调用 `load_skill` 时, 才将完整的技能内容加载到 tool_result 中。模型知道有哪些技能可用 (低成本), 按需加载它们 (只在相关时)。
+你希望智能体遵循特定领域的工作流: git 约定、测试模式、代码审查清单。全塞进系统提示太浪费 -- 10 个技能, 每个 2000 token, 就是 20,000 token, 大部分跟当前任务毫无关系。
 
 ## 解决方案
 
@@ -27,14 +25,15 @@ When model calls load_skill("git"):
 | <skill name="git">                   |
 |   Full git workflow instructions...  |  ~2000 tokens
 |   Step 1: ...                        |
-|   Step 2: ...                        |
 | </skill>                             |
 +--------------------------------------+
 ```
 
+第一层: 系统提示中放技能名称 (低成本)。第二层: tool_result 中按需放完整内容。
+
 ## 工作原理
 
-1. 技能文件以 Markdown 格式存放在 `.skills/` 目录中, 带有 YAML frontmatter。
+1. 技能文件以 Markdown 格式存放在 `.skills/`, 带 YAML frontmatter。
 
 ```
 .skills/
@@ -46,68 +45,12 @@ When model calls load_skill("git"):
 
 ```python
 class SkillLoader:
-    def _parse_frontmatter(self, text: str) -> tuple:
-        match = re.match(
-            r"^---\n(.*?)\n---\n(.*)", text, re.DOTALL
-        )
-        if not match:
-            return {}, text
-        meta = {}
-        for line in match.group(1).strip().splitlines():
-            if ":" in line:
-                key, val = line.split(":", 1)
-                meta[key.strip()] = val.strip()
-        return meta, match.group(2).strip()
-```
-
-3. 第一层: `get_descriptions()` 返回简短描述, 用于系统提示。
-
-```python
-def get_descriptions(self) -> str:
-    lines = []
-    for name, skill in self.skills.items():
-        desc = skill["meta"].get("description", "No description")
-        lines.append(f"  - {name}: {desc}")
-    return "\n".join(lines)
-
-SYSTEM = f"""You are a coding agent at {WORKDIR}.
-Skills available:
-{SKILL_LOADER.get_descriptions()}"""
-```
-
-4. 第二层: `get_content()` 返回用 `<skill>` 标签包裹的完整正文。
-
-```python
-def get_content(self, name: str) -> str:
-    skill = self.skills.get(name)
-    if not skill:
-        return f"Error: Unknown skill '{name}'."
-    return f"<skill name=\"{name}\">\n{skill['body']}\n</skill>"
-```
-
-5. `load_skill` 工具只是 dispatch map 中的又一个条目。
-
-```python
-TOOL_HANDLERS = {
-    # ...base tools...
-    "load_skill": lambda **kw: SKILL_LOADER.get_content(kw["name"]),
-}
-```
-
-## 核心代码
-
-SkillLoader 类 (来自 `agents/s05_skill_loading.py`, 第 51-97 行):
-
-```python
-class SkillLoader:
     def __init__(self, skills_dir: Path):
         self.skills = {}
         for f in sorted(skills_dir.glob("*.md")):
             text = f.read_text()
             meta, body = self._parse_frontmatter(text)
-            self.skills[f.stem] = {
-                "meta": meta, "body": body
-            }
+            self.skills[f.stem] = {"meta": meta, "body": body}
 
     def get_descriptions(self) -> str:
         lines = []
@@ -120,22 +63,32 @@ class SkillLoader:
         skill = self.skills.get(name)
         if not skill:
             return f"Error: Unknown skill '{name}'."
-        return (f"<skill name=\"{name}\">\n"
-                f"{skill['body']}\n</skill>")
+        return f"<skill name=\"{name}\">\n{skill['body']}\n</skill>"
 ```
+
+3. 第一层写入系统提示。第二层不过是 dispatch map 中的又一个工具。
+
+```python
+SYSTEM = f"""You are a coding agent at {WORKDIR}.
+Skills available:
+{SKILL_LOADER.get_descriptions()}"""
+
+TOOL_HANDLERS = {
+    # ...base tools...
+    "load_skill": lambda **kw: SKILL_LOADER.get_content(kw["name"]),
+}
+```
+
+模型知道有哪些技能 (便宜), 需要时再加载完整内容 (贵)。
 
 ## 相对 s04 的变更
 
 | 组件           | 之前 (s04)       | 之后 (s05)                     |
-|----------------|------------------|----------------------------|
-| Tools          | 5 (基础 + task)  | 5 (基础 + load_skill)      |
-| 系统提示       | 静态字符串       | + 技能描述列表             |
-| 知识库         | 无               | .skills/*.md 文件          |
-| 注入方式       | 无               | 两层 (系统提示 + result)   |
-
-## 设计原理
-
-两层注入解决了注意力预算问题。将所有技能内容放入系统提示会在未使用的技能上浪费 token。第一层 (紧凑摘要) 总共约 120 token。第二层 (完整内容) 通过 tool_result 按需加载。这可以扩展到数十个技能而不降低模型注意力质量。关键洞察是: 模型只需要知道有哪些技能 (低成本) 就能决定何时加载某个技能 (高成本)。这与软件模块系统中的懒加载原则相同。
+|----------------|------------------|--------------------------------|
+| Tools          | 5 (基础 + task)  | 5 (基础 + load_skill)          |
+| 系统提示       | 静态字符串       | + 技能描述列表                 |
+| 知识库         | 无               | .skills/*.md 文件              |
+| 注入方式       | 无               | 两层 (系统提示 + result)       |
 
 ## 试一试
 
@@ -144,7 +97,7 @@ cd learn-claude-code
 python agents/s05_skill_loading.py
 ```
 
-可以尝试的提示:
+试试这些 prompt (英文 prompt 对 LLM 效果更好, 也可以用中文):
 
 1. `What skills are available?`
 2. `Load the agent-builder skill and follow its instructions`

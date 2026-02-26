@@ -1,21 +1,16 @@
-# s06: Compact
+# s06: Context Compact
 
-> 3層の圧縮パイプラインにより、古いツール結果の戦略的な忘却、トークンが閾値を超えた時の自動要約、オンデマンドの手動圧縮を組み合わせて、エージェントを無期限に動作可能にする。
+`s01 > s02 > s03 > s04 > s05 > [ s06 ] | s07 > s08 > s09 > s10 > s11 > s12`
+
+> *"Strategic forgetting"* -- 古いコンテキストを忘れることで無限セッションを実現する。
 
 ## 問題
 
-コンテキストウィンドウは有限だ。十分なツール呼び出しの後、メッセージ配列がモデルのコンテキスト上限を超え、API呼び出しが失敗する。ハード制限に達する前でも、パフォーマンスは劣化する: モデルは遅くなり、精度が落ち、以前のメッセージを無視し始める。
-
-200,000トークンのコンテキストウィンドウは大きく聞こえるが、1000行のソースファイルに対する一回の`read_file`で約4000トークンを消費する。30ファイルを読み20回のbashコマンドを実行すると、100,000トークン以上になる。何らかの圧縮がなければ、エージェントは大規模なコードベースで作業できない。
-
-3層のパイプラインは積極性を段階的に上げて対処する:
-第1層(micro-compact)は毎ターン静かに古いツール結果を置換する。
-第2層(auto-compact)はトークンが閾値を超えた時に完全な要約を発動する。
-第3層(manual compact)はモデル自身が圧縮をトリガーできる。
-
-教育上の簡略化: ここでのトークン推定は大まかな「文字数/4」ヒューリスティックを使用している。本番システムでは正確なカウントのために適切なトークナイザーライブラリを使用する。
+コンテキストウィンドウは有限だ。1000行のファイルに対する`read_file`1回で約4000トークンを消費する。30ファイルを読み20回のbashコマンドを実行すると、100,000トークン超。圧縮なしでは、エージェントは大規模コードベースで作業できない。
 
 ## 解決策
+
+積極性を段階的に上げる3層構成:
 
 ```
 Every turn:
@@ -47,7 +42,7 @@ continue    [Layer 2: auto_compact]
 
 ## 仕組み
 
-1. **第1層 -- micro_compact**: 各LLM呼び出しの前に、直近3件以前のすべてのtool_resultエントリを見つけて内容を置換する。
+1. **第1層 -- micro_compact**: 各LLM呼び出しの前に、古いツール結果をプレースホルダーに置換する。
 
 ```python
 def micro_compact(messages: list) -> list:
@@ -59,24 +54,22 @@ def micro_compact(messages: list) -> list:
                     tool_results.append((i, j, part))
     if len(tool_results) <= KEEP_RECENT:
         return messages
-    to_clear = tool_results[:-KEEP_RECENT]
-    for _, _, part in to_clear:
+    for _, _, part in tool_results[:-KEEP_RECENT]:
         if len(part.get("content", "")) > 100:
-            tool_id = part.get("tool_use_id", "")
-            tool_name = tool_name_map.get(tool_id, "unknown")
             part["content"] = f"[Previous: used {tool_name}]"
     return messages
 ```
 
-2. **第2層 -- auto_compact**: 推定トークン数が50,000を超えた時、完全なトランスクリプトを保存し、LLMに要約を依頼する。
+2. **第2層 -- auto_compact**: トークンが閾値を超えたら、完全なトランスクリプトをディスクに保存し、LLMに要約を依頼する。
 
 ```python
 def auto_compact(messages: list) -> list:
-    TRANSCRIPT_DIR.mkdir(exist_ok=True)
+    # Save transcript for recovery
     transcript_path = TRANSCRIPT_DIR / f"transcript_{int(time.time())}.jsonl"
     with open(transcript_path, "w") as f:
         for msg in messages:
             f.write(json.dumps(msg, default=str) + "\n")
+    # LLM summarizes
     response = client.messages.create(
         model=MODEL,
         messages=[{"role": "user", "content":
@@ -84,60 +77,29 @@ def auto_compact(messages: list) -> list:
             + json.dumps(messages, default=str)[:80000]}],
         max_tokens=2000,
     )
-    summary = response.content[0].text
     return [
-        {"role": "user", "content": f"[Compressed]\n\n{summary}"},
+        {"role": "user", "content": f"[Compressed]\n\n{response.content[0].text}"},
         {"role": "assistant", "content": "Understood. Continuing."},
     ]
 ```
 
 3. **第3層 -- manual compact**: `compact`ツールが同じ要約処理をオンデマンドでトリガーする。
 
-```python
-if manual_compact:
-    messages[:] = auto_compact(messages)
-```
-
-4. agent loopが3つの層すべてを統合する。
+4. ループが3層すべてを統合する:
 
 ```python
 def agent_loop(messages: list):
     while True:
-        micro_compact(messages)
+        micro_compact(messages)                        # Layer 1
         if estimate_tokens(messages) > THRESHOLD:
-            messages[:] = auto_compact(messages)
+            messages[:] = auto_compact(messages)       # Layer 2
         response = client.messages.create(...)
         # ... tool execution ...
         if manual_compact:
-            messages[:] = auto_compact(messages)
+            messages[:] = auto_compact(messages)       # Layer 3
 ```
 
-## 主要コード
-
-3層パイプライン(`agents/s06_context_compact.py` 67-93行目および189-223行目):
-
-```python
-THRESHOLD = 50000
-KEEP_RECENT = 3
-
-def micro_compact(messages):
-    # Replace old tool results with placeholders
-    ...
-
-def auto_compact(messages):
-    # Save transcript, LLM summarize, replace messages
-    ...
-
-def agent_loop(messages):
-    while True:
-        micro_compact(messages)          # Layer 1
-        if estimate_tokens(messages) > THRESHOLD:
-            messages[:] = auto_compact(messages)  # Layer 2
-        response = client.messages.create(...)
-        # ...
-        if manual_compact:
-            messages[:] = auto_compact(messages)  # Layer 3
-```
+トランスクリプトがディスク上に完全な履歴を保持する。何も真に失われず、アクティブなコンテキストの外に移動されるだけ。
 
 ## s05からの変更点
 
@@ -147,12 +109,7 @@ def agent_loop(messages):
 | Context mgmt   | None             | Three-layer compression    |
 | Micro-compact  | None             | Old results -> placeholders|
 | Auto-compact   | None             | Token threshold trigger    |
-| Manual compact | None             | `compact` tool             |
 | Transcripts    | None             | Saved to .transcripts/     |
-
-## 設計原理
-
-コンテキストウィンドウは有限だが、エージェントセッションは無限にできる。3層の圧縮が異なる粒度でこれを解決する: micro-compact(古いツール出力の置換)、auto-compact(上限に近づいたときのLLM要約)、manual compact(ユーザートリガー)。重要な洞察は、忘却はバグではなく機能だということだ -- 無制限のセッションを可能にする。トランスクリプトはディスク上に完全な履歴を保存するため、何も真に失われず、アクティブなコンテキストの外に移動されるだけだ。層状のアプローチにより、各層がサイレントなターンごとのクリーンアップから完全な会話リセットまで、独自の粒度で独立して動作する。
 
 ## 試してみる
 
@@ -161,9 +118,6 @@ cd learn-claude-code
 python agents/s06_context_compact.py
 ```
 
-試せるプロンプト例:
-
-1. `Read every Python file in the agents/ directory one by one`
-   (micro-compactが古い結果を置換するのを観察する)
+1. `Read every Python file in the agents/ directory one by one` (micro-compactが古い結果を置換するのを観察する)
 2. `Keep reading files until compression triggers automatically`
 3. `Use the compact tool to manually compress the conversation`

@@ -24,7 +24,7 @@
 **12 の段階的セッション、シンプルなループから分離された自律実行まで。**
 **各セッションは1つのメカニズムを追加する。各メカニズムには1つのモットーがある。**
 
-> **s01** &nbsp; *"Bash があれば十分"* &mdash; 1つのツール + 1つのループ = エージェント
+> **s01** &nbsp; *"One loop & Bash is all you need"* &mdash; 1つのツール + 1つのループ = エージェント
 >
 > **s02** &nbsp; *"ループは変わらない"* &mdash; ツール追加はハンドラー追加であり、ループの作り直しではない
 >
@@ -101,8 +101,8 @@ pip install -r requirements.txt
 cp .env.example .env   # .env を編集して ANTHROPIC_API_KEY を入力
 
 python agents/s01_agent_loop.py       # ここから開始
-python agents/s11_autonomous_agents.py  # 完全自律チーム
-python agents/s12_worktree_task_isolation.py  # Task 対応の worktree 分離
+python agents/s12_worktree_task_isolation.py  # 全セッションの到達点
+python agents/s_full.py               # 総括: 全メカニズム統合
 ```
 
 ### Web プラットフォーム
@@ -121,13 +121,13 @@ cd web && npm install && npm run dev   # http://localhost:3000
 s01  エージェントループ      [1]     s03  TodoWrite               [5]
      while + stop_reason                  TodoManager + nag リマインダー
      |                                    |
-     +-> s02  ツール             [4]     s04  サブエージェント      [5]
+     +-> s02  Tool Use            [4]     s04  サブエージェント      [5]
               dispatch map: name->handler     子ごとに新しい messages[]
                                               |
                                          s05  Skills               [5]
                                               SKILL.md を tool_result で注入
                                               |
-                                         s06  Compact              [5]
+                                         s06  Context Compact      [5]
                                               3層コンテキスト圧縮
 
 フェーズ3: 永続化                     フェーズ4: チーム
@@ -152,7 +152,7 @@ s08  バックグラウンドタスク   [6]     s10  チームプロトコル  
 ```
 learn-claude-code/
 |
-|-- agents/                        # Python リファレンス実装 (s01-s12 + 完全版)
+|-- agents/                        # Python リファレンス実装 (s01-s12 + s_full 総括)
 |-- docs/{en,zh,ja}/               # メンタルモデル優先のドキュメント (3言語)
 |-- web/                           # インタラクティブ学習プラットフォーム (Next.js)
 |-- skills/                        # s05 の Skill ファイル
@@ -166,18 +166,62 @@ learn-claude-code/
 
 | セッション | トピック | モットー |
 |-----------|---------|---------|
-| [s01](./docs/ja/s01-the-agent-loop.md) | エージェントループ | *Bash があれば十分* |
-| [s02](./docs/ja/s02-tool-use.md) | ツール | *ループは変わらない* |
+| [s01](./docs/ja/s01-the-agent-loop.md) | エージェントループ | *One loop & Bash is all you need* |
+| [s02](./docs/ja/s02-tool-use.md) | Tool Use | *ループは変わらない* |
 | [s03](./docs/ja/s03-todo-write.md) | TodoWrite | *行動する前に計画せよ* |
 | [s04](./docs/ja/s04-subagent.md) | サブエージェント | *プロセス分離 = コンテキスト分離* |
 | [s05](./docs/ja/s05-skill-loading.md) | Skills | *必要な時にロード、事前にではなく* |
-| [s06](./docs/ja/s06-context-compact.md) | Compact | *戦略的忘却* |
+| [s06](./docs/ja/s06-context-compact.md) | Context Compact | *戦略的忘却* |
 | [s07](./docs/ja/s07-task-system.md) | タスクシステム | *状態は圧縮を生き延びる* |
 | [s08](./docs/ja/s08-background-tasks.md) | バックグラウンドタスク | *撃ちっ放し* |
 | [s09](./docs/ja/s09-agent-teams.md) | エージェントチーム | *追記で送信、排出で読取* |
 | [s10](./docs/ja/s10-team-protocols.md) | チームプロトコル | *同じ request_id、2つのプロトコル* |
 | [s11](./docs/ja/s11-autonomous-agents.md) | 自律エージェント | *ポーリング、クレーム、作業、繰り返し* |
 | [s12](./docs/ja/s12-worktree-task-isolation.md) | Worktree + タスク分離 | *ディレクトリで分離し、タスクIDで調整する* |
+
+## 次のステップ -- 理解から出荷へ
+
+12 セッションを終えれば、エージェントの内部構造を完全に理解している。その知識を活かす 2 つの方法:
+
+### Kode Agent CLI -- オープンソース Coding Agent CLI
+
+> `npm i -g @shareai-lab/kode`
+
+Skill & LSP 対応、Windows 対応、GLM / MiniMax / DeepSeek 等のオープンモデルに接続可能。インストールしてすぐ使える。
+
+GitHub: **[shareAI-lab/Kode-cli](https://github.com/shareAI-lab/Kode-cli)**
+
+### Kode Agent SDK -- アプリにエージェント機能を埋め込む
+
+公式 Claude Code Agent SDK は内部で完全な CLI プロセスと通信する -- 同時ユーザーごとに独立のターミナルプロセスが必要。Kode SDK は独立ライブラリでユーザーごとのプロセスオーバーヘッドがなく、バックエンド、ブラウザ拡張、組み込みデバイス等に埋め込み可能。
+
+GitHub: **[shareAI-lab/Kode-agent-sdk](https://github.com/shareAI-lab/Kode-agent-sdk)**
+
+---
+
+## 姉妹教材: *オンデマンドセッション*から*常時稼働アシスタント*へ
+
+本リポジトリが教えるエージェントは **使い捨て型** -- ターミナルを開き、タスクを与え、終わったら閉じる。次のセッションは白紙から始まる。これが Claude Code のモデル。
+
+[OpenClaw](https://github.com/openclaw/openclaw) は別の可能性を証明した: 同じ agent core の上に 2 つのメカニズムを追加するだけで、エージェントは「突かないと動かない」から「30 秒ごとに自分で起きて仕事を探す」に変わる:
+
+- **ハートビート** -- 30 秒ごとにシステムがエージェントにメッセージを送り、やることがあるか確認させる。なければスリープ続行、あれば即座に行動。
+- **Cron** -- エージェントが自ら未来のタスクをスケジュールし、時間が来たら自動実行。
+
+さらにマルチチャネル IM ルーティング (WhatsApp / Telegram / Slack / Discord 等 13+ プラットフォーム)、永続コンテキストメモリ、Soul パーソナリティシステムを加えると、エージェントは使い捨てツールから常時稼働のパーソナル AI アシスタントへ変貌する。
+
+**[claw0](https://github.com/shareAI-lab/claw0)** はこれらのメカニズムをゼロから分解する姉妹教材リポジトリ:
+
+```
+claw agent = agent core + heartbeat + cron + IM chat + memory + soul
+```
+
+```
+learn-claude-code                   claw0
+(エージェントランタイムコア:          (能動的な常時稼働アシスタント:
+ ループ、ツール、計画、                ハートビート、cron、IM チャネル、
+ チーム、worktree 分離)                メモリ、Soul パーソナリティ)
+```
 
 ## ライセンス
 

@@ -12,7 +12,7 @@
       },
       "ja": {
         "title": "イベント駆動通知ではなくポーリングで未割り当てタスクを発見",
-        "description": "自律的なチームメイトはイベント駆動の通知を待つのではなく、約1秒ごとに共有タスクボードをポーリングして未割り当てタスクを探します。ポーリングはパブ/サブより根本的にシンプルです：サブスクリプション管理、イベントルーティング、イベント欠落バグがありません。ファイルベースの永続化では、ポーリングは「ディレクトリ一覧を読む」だけで、実行中のエージェント数に関係なく動作する安価な操作です。1秒間隔は応答性（新タスクの迅速な発見）とファイルシステムのオーバーヘッド（ディスク読み取りの過負荷回避）のバランスを取っています。"
+        "description": "自律的なチームメイトはイベント駆動の通知を待つのではなく、約1秒ごとに共有タスクボードをポーリングして未割り当てタスクを探します。ポーリングはパブ/サブより根本的にシンプルです：サブスクリプション管理、イベントルーティング、イベント欠落バグがありません。ファイルベースの永続化では、ポーリングは「ディレクトリ一覧を読む」だけで、実行中のエージェント数に関係なく動作する安価な操作です。"
       }
     },
     {
@@ -26,21 +26,21 @@
       },
       "ja": {
         "title": "60秒のアイドルタイムアウトで自動終了",
-        "description": "自律的なチームメイトが作業するタスクもインボックスのメッセージもない場合、最大60秒待ってから諦めてシャットダウンします。これにより永遠に来ない仕事を待ち続けるゾンビチームメイトを防ぎます――リーダーがシャットダウンリクエストの送信を忘れたり、残りのタスクが全て外部イベントでブロックされている場合に実際に起こる問題です。60秒のウィンドウはタスク完了から新タスク作成までの短い間隔で早期シャットダウンが起きない十分な長さであり、かつ未使用のチームメイトがリソースを浪費しない十分な短さです。"
+        "description": "自律的なチームメイトが作業するタスクもインボックスのメッセージもない場合、最大60秒待ってから諦めてシャットダウンします。これにより永遠に来ない仕事を待ち続けるゾンビチームメイトを防ぎます。60秒のウィンドウはタスク完了から新タスク作成までの短い間隔で早期シャットダウンが起きない十分な長さであり、かつ未使用のチームメイトがリソースを浪費しない十分な短さです。"
       }
     },
     {
       "id": "identity-after-compression",
       "title": "Re-Inject Teammate Identity After Context Compression",
       "description": "When auto_compact compresses the conversation, the resulting summary loses crucial metadata: the teammate's name, which team it belongs to, and its agent_id. Without this information, the teammate can't claim tasks (tasks are owned by name), can't check its inbox (inbox files are keyed by agent_id), and can't identify itself in messages. So after every auto_compact, the system re-injects a structured identity block into the conversation: 'You are [name] on team [team], your agent_id is [id], your inbox is at [path].' This is the minimum context needed for the teammate to remain functional after memory loss.",
-      "alternatives": "Putting identity in the system prompt (which survives compression) would avoid this problem, but violates the cache-friendly static-system-prompt design from v4. Embedding identity in the summary prompt ('when summarizing, always include your name and team') is unreliable -- the LLM might omit it. Explicit post-compression injection is deterministic and guaranteed to work.",
+      "alternatives": "Putting identity in the system prompt (which survives compression) would avoid this problem, but violates the cache-friendly static-system-prompt design from s05. Embedding identity in the summary prompt ('when summarizing, always include your name and team') is unreliable -- the LLM might omit it. Explicit post-compression injection is deterministic and guaranteed to work.",
       "zh": {
         "title": "上下文压缩后重新注入队友身份",
         "description": "自动压缩对话时，生成的摘要会丢失关键元数据：队友的名称、所属团队和 agent_id。没有这些信息，队友无法认领任务（任务按名称归属）、无法检查收件箱（收件箱文件以 agent_id 为键）、也无法在消息中表明身份。因此每次自动压缩后，系统会向对话中重新注入一个结构化的身份块：'你是 [team] 团队的 [name]，你的 agent_id 是 [id]，你的收件箱在 [path]。'这是队友在记忆丢失后保持功能所需的最小上下文。"
       },
       "ja": {
         "title": "コンテキスト圧縮後にチームメイトのアイデンティティを再注入",
-        "description": "自動コンパクトが会話を圧縮すると、生成された要約は重要なメタデータを失います：チームメイトの名前、所属チーム、agent_id。この情報がなければチームメイトはタスクを申告できず（タスクは名前で所有）、インボックスを確認できず（インボックスファイルは agent_id をキーとする）、メッセージで自分を識別できません。そのため自動コンパクトの後、システムは構造化されたアイデンティティブロックを会話に再注入します：「あなたは [team] チームの [name] です。agent_id は [id]、インボックスは [path] にあります。」これはメモリ喪失後もチームメイトが機能し続けるために必要な最小限のコンテキストです。"
+        "description": "自動コンパクトが会話を圧縮すると、生成された要約は重要なメタデータを失います：チームメイトの名前、所属チーム、agent_id。この情報がなければチームメイトはタスクを申告できず（タスクは名前で所有）、インボックスを確認できず（インボックスファイルは agent_id をキーとする）、メッセージで自分を識別できません。そのため自動コンパクトの後、システムは構造化されたアイデンティティブロックを会話に再注入します。これはメモリ喪失後もチームメイトが機能し続けるために必要な最小限のコンテキストです。"
       }
     }
   ]
